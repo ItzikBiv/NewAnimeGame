@@ -49,6 +49,8 @@ MODULES=(
 	Inventory/Merge
 	Grid/Grid
 	Combat/Wave
+	Net/RateLimit
+	Net/Validate
 )
 
 names=()
@@ -68,7 +70,7 @@ echo "print(\"modules parsed: ${names[*]}\n\")" >>"$OUT"
 
 # Each suite runs in its own chunk so a failure in one still reports the other.
 status=0
-for suite in config-invariants design-invariants save-invariants roll-invariants loop-invariants combat-invariants; do
+for suite in config-invariants design-invariants save-invariants roll-invariants loop-invariants combat-invariants net-invariants; do
 	SUITE_OUT="$BUILD/${suite}.luau"
 	cp "$OUT" "$SUITE_OUT"
 	{

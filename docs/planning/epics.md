@@ -34,7 +34,7 @@ survives a rejoin.
 | 1.4 | Grid placement and slot limits | **done** |
 | 1.5 | Wave simulation — spawn, damage, gold | **done** |
 | 1.6 | DataService — load, migrate, session-lock, autosave | todo |
-| 1.7 | Remotes + rate limiting + validation middleware | todo |
+| 1.7 | Remotes + rate limiting + validation middleware | **part** |
 | 1.8 | Client HUD, roll machine, inventory, grid UI | todo |
 | 1.9 | In-Studio playtest and polish pass | todo *(owner)* |
 
@@ -141,9 +141,14 @@ ProfileStore lands here — the story that first exercises it.
 
 ---
 
-### Story 1.7 — Remotes and middleware
+### Story 1.7 — Remotes and middleware ◐
 
 **Allowed:** `src/shared/Net/*`, `src/server/Middleware/*`, `src/server/Services/*`
+
+**Done:** the pure half — `Net/RateLimit.luau` (token buckets, time injected) and `Net/Validate.luau`
+(per-remote payload validation), both fully tested.
+**Remaining:** the RemoteEvent wiring and the services behind it, which are Roblox-runtime glue and
+cannot be verified outside Studio.
 
 **Acceptance**
 - Every `C→S` remote **shall** pass rate limiting and argument validation before reaching a service.
