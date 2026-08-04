@@ -1,0 +1,22 @@
+# Wally
+/Packages/
+/DevPackages/
+wally.lock
+
+# Rojo / build output
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+*.rbxl.lock
+*.rbxlx.lock
+
+# Tooling
+/.rokit/
+sourcemap.json
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

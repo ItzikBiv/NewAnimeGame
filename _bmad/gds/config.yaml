@@ -1,0 +1,28 @@
+# BMad Game Dev Studio — project config
+# Read on activation by every gds-* skill in the workflow-game-design plugin.
+
+project_name: "Roll Anime to Fight (clone)"
+user_name: "ItzikBiv"
+
+communication_language: "English"
+document_output_language: "English"
+
+# Where planning artifacts are written.
+planning_artifacts: "docs/planning"
+output_location: "docs/planning"
+
+# Drives how much hand-holding the skills apply.
+game_dev_experience: "intermediate"
+
+# Grounding context loaded as foundational facts. The teardown is the canonical
+# record of what the source game actually does — prefer it over any wiki.
+project_knowledge: "docs/ground-truth/source-game-teardown.md"
+
+# Engine / target, decided at kickoff.
+engine: "Roblox"
+language: "Luau"
+toolchain: "Rojo + Wally + Selene + StyLua"
+
+# Right-sizing: approved plan is a vertical slice first, then layered epics.
+size_mode: "Large"
+delivery_strategy: "vertical-slice-first"
