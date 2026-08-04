@@ -32,7 +32,7 @@ survives a rejoin.
 | 1.2 | Inventory: uid issuing, capacity, ownership | **done** |
 | 1.3 | Merge resolution — the strict three-way match | **done** |
 | 1.4 | Grid placement and slot limits | **done** |
-| 1.5 | Wave simulation — spawn, damage, gold | todo |
+| 1.5 | Wave simulation — spawn, damage, gold | **done** |
 | 1.6 | DataService — load, migrate, session-lock, autosave | todo |
 | 1.7 | Remotes + rate limiting + validation middleware | todo |
 | 1.8 | Client HUD, roll machine, inventory, grid UI | todo |
@@ -111,9 +111,12 @@ Uid issuing, capacity enforcement against the Inventory Upgrade, ownership looku
 
 ---
 
-### Story 1.5 — Wave simulation
+### Story 1.5 — Wave simulation ✅
 
-**Allowed:** `src/shared/Combat/*`, `src/server/Services/CombatService.luau`, `tests/combat-*.luau`
+**Allowed:** `src/shared/Combat/Wave.luau`, `tests/combat-invariants.luau`
+
+The pure half is done. `CombatService` — the thin server wrapper owning timing and replication —
+lands with story 1.7, since it needs the remote layer to replicate through.
 
 Pure resolution of a wave tick, with the service owning only timing and replication.
 

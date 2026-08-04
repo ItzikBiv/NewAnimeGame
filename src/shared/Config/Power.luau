@@ -113,6 +113,26 @@ end
 ]]
 local BASE_ATTACK = 10
 local BASE_ATTACK_PERIOD = 1.0
+-- [OURS] A Common / Normal / Lv1 unit's health pool.
+local BASE_HEALTH = 100
+
+--[[
+	A unit's health. Mutations carry their own health multiplier, separate from
+	their damage one — that is what makes a mutated tank meaningfully different
+	from a mutated damage dealer rather than just "bigger".
+]]
+local function health(
+	rarity: RarityId,
+	mutation: MutationId,
+	level: number,
+	traitHealthBonus: number?
+): number
+	return BASE_HEALTH
+		* RarityPower[rarity]
+		* Mutations.Mutations[mutation].healthMultiplier
+		* levelMultiplier(level)
+		* (1 + (traitHealthBonus or 0))
+end
 
 local function dps(
 	rarity: RarityId,
@@ -136,9 +156,11 @@ return {
 	DEFENSE_CONSTANT = DEFENSE_CONSTANT,
 	BASE_ATTACK = BASE_ATTACK,
 	BASE_ATTACK_PERIOD = BASE_ATTACK_PERIOD,
+	BASE_HEALTH = BASE_HEALTH,
 
 	levelMultiplier = levelMultiplier,
 	power = power,
+	health = health,
 	tiersGainedByMutation = tiersGainedByMutation,
 	damageAfterDefense = damageAfterDefense,
 	attackPeriod = attackPeriod,

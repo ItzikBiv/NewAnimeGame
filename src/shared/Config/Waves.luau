@@ -102,18 +102,37 @@ local function waveTotalHP(wave: number): number
 	return enemyHP(wave) * enemyCount(wave)
 end
 
+--[[
+	[OURS] Damage per second dealt by a single enemy.
+
+	Nothing in the screenshots or the FAQ gives enemy damage, but it cannot be zero:
+	units visibly have health bars, and the Ghost trait revives a unit "on death",
+	so units demonstrably die. Without incoming damage the Defense stat and every
+	tank unit would be decoration.
+
+	Tied to enemy HP by the same ratio as gold, so one curve drives difficulty,
+	reward and threat together rather than three independently-tuned exponents.
+]]
+local ENEMY_DAMAGE_PER_HP = 0.02
+
+local function enemyDamage(wave: number): number
+	return baseEnemyHP(wave) * ENEMY_DAMAGE_PER_HP
+end
+
 return {
 	BASE_ENEMY_HP = BASE_ENEMY_HP,
 	HP_GROWTH_PER_WAVE = HP_GROWTH_PER_WAVE,
 	MIN_ENEMIES = MIN_ENEMIES,
 	MAX_ENEMIES = MAX_ENEMIES,
 	GOLD_PER_HP = GOLD_PER_HP,
+	ENEMY_DAMAGE_PER_HP = ENEMY_DAMAGE_PER_HP,
 	BOSS_WAVE_INTERVAL = BOSS_WAVE_INTERVAL,
 	BOSS_HP_MULTIPLIER = BOSS_HP_MULTIPLIER,
 
 	isBossWave = isBossWave,
 	baseEnemyHP = baseEnemyHP,
 	enemyHP = enemyHP,
+	enemyDamage = enemyDamage,
 	enemyCount = enemyCount,
 	goldPerKill = goldPerKill,
 	goldPerWave = goldPerWave,
