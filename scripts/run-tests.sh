@@ -32,16 +32,31 @@ STUB
 
 # Inline each config module as a function call, binding it to a global of the
 # same name so the test file can reach it.
-for module in Rarities Mutations Traits Upgrades; do
+#
+# Order matters: a module listed here may only require modules listed before it.
+# `require(script.Parent.Foo)` is rewritten to the global `Foo`, since there is no
+# Roblox instance tree outside Studio.
+for module in Rarities Mutations Traits Upgrades Waves Power; do
 	{
 		echo "local function _load_${module}()"
-		cat "$CONFIG/${module}.luau"
+		sed -E 's/require\(script\.Parent\.([A-Za-z0-9_]+)\)/\1/g' "$CONFIG/${module}.luau"
 		echo "end"
 		echo "${module} = _load_${module}()"
 	} >>"$OUT"
 done
 
-echo 'print("config modules parsed: Rarities, Mutations, Traits, Upgrades\n")' >>"$OUT"
-cat "$ROOT/tests/config-invariants.luau" >>"$OUT"
+echo 'print("config modules parsed: Rarities, Mutations, Traits, Upgrades, Waves, Power\n")' >>"$OUT"
 
-"$LUAU" "$OUT"
+# Each suite runs in its own chunk so a failure in one still reports the other.
+status=0
+for suite in config-invariants design-invariants; do
+	SUITE_OUT="$BUILD/${suite}.luau"
+	cp "$OUT" "$SUITE_OUT"
+	{
+		echo "print(\"\\n===== ${suite} =====\\n\")"
+		cat "$ROOT/tests/${suite}.luau"
+	} >>"$SUITE_OUT"
+	"$LUAU" "$SUITE_OUT" || status=1
+done
+
+exit "$status"
