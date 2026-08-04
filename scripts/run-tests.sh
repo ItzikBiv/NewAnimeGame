@@ -44,6 +44,7 @@ MODULES=(
 	Config/Waves
 	Config/Power
 	Save/Schema
+	Gacha/Roll
 )
 
 names=()
@@ -63,7 +64,7 @@ echo "print(\"modules parsed: ${names[*]}\n\")" >>"$OUT"
 
 # Each suite runs in its own chunk so a failure in one still reports the other.
 status=0
-for suite in config-invariants design-invariants save-invariants; do
+for suite in config-invariants design-invariants save-invariants roll-invariants; do
 	SUITE_OUT="$BUILD/${suite}.luau"
 	cp "$OUT" "$SUITE_OUT"
 	{
