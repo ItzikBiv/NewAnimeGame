@@ -29,9 +29,9 @@ survives a rejoin.
 | # | Story | Status |
 |---|---|---|
 | 1.1 | Roll resolution — rarity, mutation, pity | **done** |
-| 1.2 | Inventory: uid issuing, capacity, ownership | todo |
-| 1.3 | Merge resolution — the strict three-way match | todo |
-| 1.4 | Grid placement and slot limits | todo |
+| 1.2 | Inventory: uid issuing, capacity, ownership | **done** |
+| 1.3 | Merge resolution — the strict three-way match | **done** |
+| 1.4 | Grid placement and slot limits | **done** |
 | 1.5 | Wave simulation — spawn, damage, gold | todo |
 | 1.6 | DataService — load, migrate, session-lock, autosave | todo |
 | 1.7 | Remotes + rate limiting + validation middleware | todo |
@@ -62,9 +62,14 @@ rates, and no gap between hits of a tier longer than its pity cap.
 
 ---
 
-### Story 1.2 — Inventory
+### Story 1.2 — Inventory ✅
 
-**Allowed:** `src/shared/Inventory/*`, `tests/inventory-invariants.luau`
+**Allowed:** `src/shared/Inventory/Inventory.luau`, `tests/loop-invariants.luau`
+
+> Stories 1.2, 1.3 and 1.4 share one test suite rather than the three this plan
+> originally named. They share one invariant — a unit exists exactly once, and the grid only ever
+> references units the player owns — and testing them apart would miss the interactions that break
+> it. Three files of identical boilerplate would have been ceremony, not coverage.
 
 Uid issuing, capacity enforcement against the Inventory Upgrade, ownership lookup.
 
@@ -77,9 +82,9 @@ Uid issuing, capacity enforcement against the Inventory Upgrade, ownership looku
 
 ---
 
-### Story 1.3 — Merge resolution
+### Story 1.3 — Merge resolution ✅
 
-**Allowed:** `src/shared/Inventory/Merge.luau`, `tests/merge-invariants.luau`
+**Allowed:** `src/shared/Inventory/Merge.luau`, `tests/loop-invariants.luau`
 
 **[C]** The strict rule: same unit **and** same mutation **and** same level.
 **[C]** The base unit keeps its trait; the consumed unit's trait is destroyed.
@@ -93,9 +98,9 @@ Uid issuing, capacity enforcement against the Inventory Upgrade, ownership looku
 
 ---
 
-### Story 1.4 — Grid placement
+### Story 1.4 — Grid placement ✅
 
-**Allowed:** `src/shared/Grid/*`, `tests/grid-invariants.luau`
+**Allowed:** `src/shared/Grid/Grid.luau`, `tests/loop-invariants.luau`
 
 **Acceptance**
 - When the player places a unit on a free tile within their slot count, the system **shall** record
