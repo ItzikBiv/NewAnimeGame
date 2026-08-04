@@ -9,7 +9,7 @@
         "$path": "src/shared"
       },
       "Packages": {
-        "$path": "Packages"
+        "$path": { "optional": "Packages" }
       }
     },
 

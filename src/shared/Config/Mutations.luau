@@ -25,8 +25,7 @@
 	    which is the ceiling this ladder is shaped toward.
 ]]
 
-export type MutationId =
-	"Normal" | "Gold" | "Diamond" | "Demon" | "Destroyer" | "Hollow" | "Astronaut"
+export type MutationId = "Normal" | "Gold" | "Diamond" | "Demon" | "Destroyer" | "Hollow" | "Astronaut"
 
 export type Mutation = {
 	id: MutationId,

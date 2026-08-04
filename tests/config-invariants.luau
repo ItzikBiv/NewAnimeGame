@@ -60,20 +60,42 @@ for _, u in pairs(U) do
 	local ratio = modelled / observed.cost
 	if ratio > 0.4 and ratio < 2.5 then
 		pass += 1
-		print(string.format("  ok   %-14s Lv%-2d modelled %d vs observed %d (%.2fx)",
-			u.id, observed.level, modelled, observed.cost, ratio))
+		print(
+			string.format(
+				"  ok   %-14s Lv%-2d modelled %d vs observed %d (%.2fx)",
+				u.id,
+				observed.level,
+				modelled,
+				observed.cost,
+				ratio
+			)
+		)
 	else
 		fail += 1
-		print(string.format("  FAIL %-14s Lv%-2d modelled %d vs observed %d (%.2fx)",
-			u.id, observed.level, modelled, observed.cost, ratio))
+		print(
+			string.format(
+				"  FAIL %-14s Lv%-2d modelled %d vs observed %d (%.2fx)",
+				u.id,
+				observed.level,
+				modelled,
+				observed.cost,
+				ratio
+			)
+		)
 	end
 end
 
 print("\nTable integrity")
 local nRar, nMut, nTra = 0, 0, 0
-for _ in pairs(Rarities.Rarities) do nRar += 1 end
-for _ in pairs(Mutations.Mutations) do nMut += 1 end
-for _ in pairs(Traits.Traits) do nTra += 1 end
+for _ in pairs(Rarities.Rarities) do
+	nRar += 1
+end
+for _ in pairs(Mutations.Mutations) do
+	nMut += 1
+end
+for _ in pairs(Traits.Traits) do
+	nTra += 1
+end
 check("rarity tiers (Common..God, NO Uncommon)", nRar, 7)
 check("mutations confirmed from Index tabs", nMut, 7)
 check("traits (15 from dev FAQ + Viking)", nTra, 16)
@@ -98,8 +120,13 @@ for i = 1, 6 do
 	local lo, hi = byOrder[i], byOrder[i + 1]
 	assert(
 		Rarities.BaseWeights[lo] > Rarities.BaseWeights[hi],
-		string.format("weight not decreasing: %s (%s) <= %s (%s)", lo,
-			tostring(Rarities.BaseWeights[lo]), hi, tostring(Rarities.BaseWeights[hi]))
+		string.format(
+			"weight not decreasing: %s (%s) <= %s (%s)",
+			lo,
+			tostring(Rarities.BaseWeights[lo]),
+			hi,
+			tostring(Rarities.BaseWeights[hi])
+		)
 	)
 end
 ok("Common > Rare > Epic > Legendary > Mythic > Secret > God")
@@ -117,7 +144,10 @@ for id, t in pairs(Traits.Traits) do
 	assert(Traits.TierWeights[t.tier], "missing tier weight for " .. t.tier)
 end
 -- The trait ladder deliberately omits Common and Secret.
-assert(not validTiers.Common and not validTiers.Secret, "trait ladder must not include Common/Secret")
+assert(
+	not validTiers.Common and not validTiers.Secret,
+	"trait ladder must not include Common/Secret"
+)
 ok("all 16 traits sit on Rare/Epic/Legendary/God/Mythic, none on Common or Secret")
 
 print("\nSpot-check the strongest trait lines against the dev FAQ verbatim")
@@ -126,7 +156,11 @@ check("Cursed damage    (+400%)", cursed.effect.damage, 4.00)
 check("Cursed health    (+200%)", cursed.effect.health, 2.00)
 check("Cursed crit dmg  (+100%)", cursed.effect.critDamage, 1.00)
 check("Cursed odds      (0.02%)", cursed.chance, 0.0002)
-check("Juggernaut is the one trait with a downside", Traits.Traits.Juggernaut.effect.attackSpeed, -0.10)
+check(
+	"Juggernaut is the one trait with a downside",
+	Traits.Traits.Juggernaut.effect.attackSpeed,
+	-0.10
+)
 check("Cloner summons 2 units instead of 1", Traits.Traits.Cloner.effect.summonCount, 2)
 
 print("\nMutation ladder rises with rarity of the mutation")
@@ -134,7 +168,9 @@ local muts = {}
 for _, m in pairs(Mutations.Mutations) do
 	table.insert(muts, m)
 end
-table.sort(muts, function(a, b) return a.weight > b.weight end)
+table.sort(muts, function(a, b)
+	return a.weight > b.weight
+end)
 for i = 1, #muts - 1 do
 	assert(
 		muts[i].damageMultiplier <= muts[i + 1].damageMultiplier,
