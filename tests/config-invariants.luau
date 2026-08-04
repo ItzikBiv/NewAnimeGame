@@ -3,8 +3,9 @@
 	Ground-truth regression tests for the shared config tables.
 
 	These assert that our DERIVED formulas still reproduce the values actually
-	observed in the source game (docs/ground-truth/source-game-teardown.md §6).
-	If someone "tidies" a formula and breaks parity with the real game, this fails.
+	observed in the source game, and that our OWN designed odds still satisfy the
+	constraints the real game imposes on them.
+	See docs/ground-truth/source-game-teardown.md.
 
 	Run with:  ./scripts/run-tests.sh
 	The runner inlines the config modules and executes them under the plain Luau
@@ -25,6 +26,16 @@ local function check(label, got, want)
 	else
 		fail += 1
 		print(string.format("  FAIL %-52s = %s (want %s)", label, tostring(got), tostring(want)))
+	end
+end
+
+local function expect(label, condition, detail)
+	if condition then
+		pass += 1
+		print(string.format("  ok   %s%s", label, detail and (" — " .. detail) or ""))
+	else
+		fail += 1
+		print(string.format("  FAIL %s%s", label, detail and (" — " .. detail) or ""))
 	end
 end
 
@@ -58,31 +69,11 @@ for _, u in pairs(U) do
 	-- Loose bound: we only have a single point per upgrade, so this guards against
 	-- an order-of-magnitude mistake, not against a wrong curve shape. [?]
 	local ratio = modelled / observed.cost
-	if ratio > 0.4 and ratio < 2.5 then
-		pass += 1
-		print(
-			string.format(
-				"  ok   %-14s Lv%-2d modelled %d vs observed %d (%.2fx)",
-				u.id,
-				observed.level,
-				modelled,
-				observed.cost,
-				ratio
-			)
-		)
-	else
-		fail += 1
-		print(
-			string.format(
-				"  FAIL %-14s Lv%-2d modelled %d vs observed %d (%.2fx)",
-				u.id,
-				observed.level,
-				modelled,
-				observed.cost,
-				ratio
-			)
-		)
-	end
+	expect(
+		string.format("%-10s Lv%-2d", u.id, observed.level),
+		ratio > 0.4 and ratio < 2.5,
+		string.format("modelled %d vs observed %d (%.2fx)", modelled, observed.cost, ratio)
+	)
 end
 
 print("\nTable integrity")
@@ -97,73 +88,166 @@ for _ in pairs(Traits.Traits) do
 	nTra += 1
 end
 check("rarity tiers (Common..God, NO Uncommon)", nRar, 7)
-check("mutations confirmed from Index tabs", nMut, 7)
-check("traits (15 from dev FAQ + Viking)", nTra, 16)
-check("mutation event interval, seconds", Mutations.MUTATION_EVENT_INTERVAL, 900)
+check("mutations (7 from Index tabs + Slayer)", nMut, 8)
+check("traits (17 from the full dev FAQ)", nTra, 17)
+check("mutation event cycle, seconds", Mutations.MUTATION_EVENT_INTERVAL, 900)
 
-print("\nRarity table is well-formed")
+print("\nRarity ladder is well-formed")
 local seenOrder = {}
 for id, r in pairs(Rarities.Rarities) do
 	assert(not seenOrder[r.order], "duplicate rarity order on " .. id)
 	seenOrder[r.order] = true
 	assert(r.essenceItem and #r.essenceItem > 0, "missing essenceItem on " .. id)
-	assert(Rarities.BaseWeights[id], "missing base roll weight for " .. id)
 end
-ok("7 distinct orders, all essence items and roll weights present")
+ok("7 distinct orders, all essence items present")
 
-print("\nRoll weights decrease monotonically as rarity increases")
+-- [C] Resolved by two agreeing signals: pity counter length and Robux essence price.
 local byOrder = {}
 for id, r in pairs(Rarities.Rarities) do
 	byOrder[r.order] = id
 end
-for i = 1, 6 do
-	local lo, hi = byOrder[i], byOrder[i + 1]
+check("order 4 is Legendary", byOrder[4], "Legendary")
+check("order 5 is Mythic", byOrder[5], "Mythic")
+check("order 6 is Secret", byOrder[6], "Secret")
+check("order 7 is God", byOrder[7], "God")
+
+print("\nRoll odds: distribution is well-formed at every luck level")
+for _, luck in { 1, 2, 5, 10, 13, 50, 500 } do
+	local chances = Rarities.rollChances(luck)
+	local total = 0
+	for _, c in pairs(chances) do
+		total += c
+	end
+	expect(
+		string.format("luck x%-3d sums to 1.0", luck),
+		math.abs(total - 1) < 1e-9,
+		string.format("total %.10f, Common %.4f", total, chances.Common)
+	)
 	assert(
-		Rarities.BaseWeights[lo] > Rarities.BaseWeights[hi],
-		string.format(
-			"weight not decreasing: %s (%s) <= %s (%s)",
-			lo,
-			tostring(Rarities.BaseWeights[lo]),
-			hi,
-			tostring(Rarities.BaseWeights[hi])
-		)
+		chances.Common >= Rarities.MIN_COMMON_CHANCE - 1e-9,
+		"Common floor breached at luck " .. luck
 	)
 end
-ok("Common > Rare > Epic > Legendary > Mythic > Secret > God")
 
-print("\nPity caps exist for the three counters shown on the Roll Machine")
-for _, tier in { "Legendary", "Mythic", "God" } do
-	assert(Rarities.PityCaps[tier], "missing pity cap: " .. tier)
+print("\nRoll odds: rarer is always less likely across the designed tiers")
+-- Checked from Rare upward. Common is deliberately excluded: it is the remainder
+-- tier, so heavy luck is SUPPOSED to crowd it out — that is what luck is for.
+-- Luck stacks in this game (x13 upgrade * x10 LUCK event * potions), so the ladder
+-- is checked far beyond the upgrade cap, including absurd values.
+for _, luck in { 1, 2, 13, 130, 500, 10000, 1e9 } do
+	local chances = Rarities.rollChances(luck)
+	for i = 2, 6 do
+		local lo, hi = byOrder[i], byOrder[i + 1]
+		assert(
+			chances[lo] > chances[hi],
+			string.format(
+				"luck x%g: %s (%.8f) not more likely than %s (%.8f)",
+				luck,
+				lo,
+				chances[lo],
+				hi,
+				chances[hi]
+			)
+		)
+	end
 end
-ok("Legendary / Mythic / God")
+ok("Rare > Epic > Legendary > Mythic > Secret > God, up to luck x1e9")
 
-print("\nTrait tiers are the trait ladder, NOT the unit rarity ladder")
-local validTiers = { Rare = true, Epic = true, Legendary = true, Mythic = true, God = true }
-for id, t in pairs(Traits.Traits) do
-	assert(validTiers[t.tier], string.format("trait %s has invalid tier %s", id, tostring(t.tier)))
-	assert(Traits.TierWeights[t.tier], "missing tier weight for " .. t.tier)
+print("\nRoll odds: Common dominates unlucky play, and luck erodes it")
+local commonAt1 = Rarities.rollChances(1).Common
+local commonAt13 = Rarities.rollChances(13).Common
+expect(
+	"Common is the single most likely pull at luck x1",
+	commonAt1 > 0.5,
+	string.format("%.1f%%", commonAt1 * 100)
+)
+expect(
+	"max luck roughly halves it",
+	commonAt13 < commonAt1 * 0.6,
+	string.format("%.1f%% -> %.1f%%", commonAt1 * 100, commonAt13 * 100)
+)
+
+print("\nRoll odds: God stays genuinely rare even at max luck")
+-- [C] Owner: "god tier is really rare even with luck multiplier".
+-- Max luck is x13 (Luck Upgrade Lv25).
+local atMaxLuck = Rarities.rollChances(U.Luck.valueAtLevel(U.Luck.maxLevel))
+local godOneIn = 1 / atMaxLuck.God
+expect(
+	"God at max luck is rarer than 1 in 10,000",
+	godOneIn > 10000,
+	string.format("1 in %d", math.floor(godOneIn))
+)
+local atBase = Rarities.rollChances(1)
+expect(
+	"max luck improves God by less than 3x",
+	atMaxLuck.God / atBase.God < 3,
+	string.format(
+		"%.2fx (1 in %d -> 1 in %d)",
+		atMaxLuck.God / atBase.God,
+		math.floor(1 / atBase.God),
+		math.floor(godOneIn)
+	)
+)
+expect(
+	"but luck is strongly felt in the mid tiers",
+	atMaxLuck.Legendary / atBase.Legendary > 3,
+	string.format("Legendary %.2fx", atMaxLuck.Legendary / atBase.Legendary)
+)
+
+print("\nPity: three counters only, and each cap sits above its natural rate")
+-- [C] The Roll Machine shows exactly three. God deliberately has none.
+local nPity = 0
+for _ in pairs(Rarities.PityCaps) do
+	nPity += 1
 end
--- The trait ladder deliberately omits Common and Secret.
-assert(
-	not validTiers.Common and not validTiers.Secret,
-	"trait ladder must not include Common/Secret"
+check("pity counters shown in-game", nPity, 3)
+expect(
+	"God has NO pity counter",
+	Rarities.PityCaps.God == nil,
+	"cannot be ground out deterministically"
 )
-ok("all 16 traits sit on Rare/Epic/Legendary/God/Mythic, none on Common or Secret")
+for _, tier in { "Legendary", "Mythic", "Secret" } do
+	local naturalOneIn = 1 / Rarities.BaseChance[tier]
+	local cap = Rarities.PityCaps[tier]
+	expect(
+		string.format("%-10s pity is a safety net", tier),
+		cap > naturalOneIn,
+		string.format("natural 1 in %.0f, pity at %d", naturalOneIn, cap)
+	)
+end
 
-print("\nSpot-check the strongest trait lines against the dev FAQ verbatim")
-local cursed = Traits.Traits.Cursed
-check("Cursed damage    (+400%)", cursed.effect.damage, 4.00)
-check("Cursed health    (+200%)", cursed.effect.health, 2.00)
-check("Cursed crit dmg  (+100%)", cursed.effect.critDamage, 1.00)
-check("Cursed odds      (0.02%)", cursed.chance, 0.0002)
-check(
-	"Juggernaut is the one trait with a downside",
-	Traits.Traits.Juggernaut.effect.attackSpeed,
-	-0.10
-)
-check("Cloner summons 2 units instead of 1", Traits.Traits.Cloner.effect.summonCount, 2)
+print("\nMutation events follow the dev FAQ clock exactly")
+-- [C] Slayer xx:00, Demon xx:15, Destroyer xx:30, Hollow xx:45
+check("xx:00 -> Slayer", Mutations.activeEventMutation(0), "Slayer")
+check("xx:15 -> Demon", Mutations.activeEventMutation(15), "Demon")
+check("xx:30 -> Destroyer", Mutations.activeEventMutation(30), "Destroyer")
+check("xx:45 -> Hollow", Mutations.activeEventMutation(45), "Hollow")
+check("xx:07 still inside the xx:00 window", Mutations.activeEventMutation(7), "Slayer")
+check("xx:59 still inside the xx:45 window", Mutations.activeEventMutation(59), "Hollow")
 
-print("\nMutation ladder rises with rarity of the mutation")
+print("\nEvery minute of the hour lands in exactly one event window")
+for minute = 0, 59 do
+	assert(Mutations.activeEventMutation(minute), "no active mutation at minute " .. minute)
+end
+ok("all 60 minutes covered, no dead slots")
+
+print("\nAstronaut is admin-only and never enters the roll pool")
+check("Astronaut availability", Mutations.Mutations.Astronaut.availability, "admin")
+for minute = 0, 59 do
+	for _, id in Mutations.rollableAt(minute) do
+		assert(id ~= "Astronaut", "Astronaut rollable at minute " .. minute)
+	end
+end
+ok("checked all 60 minutes")
+
+print("\nRoll pool is the 3 always-on mutations plus exactly one event mutation")
+for _, minute in { 0, 15, 30, 45, 7, 22, 38, 51 } do
+	local pool = Mutations.rollableAt(minute)
+	assert(#pool == 4, string.format("minute %d gave %d mutations, want 4", minute, #pool))
+end
+ok("4 mutations rollable at any moment")
+
+print("\nMutation power ladder rises as availability gets scarcer")
 local muts = {}
 for _, m in pairs(Mutations.Mutations) do
 	table.insert(muts, m)
@@ -178,7 +262,73 @@ for i = 1, #muts - 1 do
 	)
 end
 check("Normal is the 1.0x baseline", Mutations.Mutations.Normal.damageMultiplier, 1.0)
-ok("rarer mutations are never weaker than commoner ones")
+expect(
+	"Astronaut tops the ladder",
+	muts[#muts].id == "Astronaut",
+	"rarest mutation is the strongest"
+)
+
+print("\nTrait tiers are the trait ladder, NOT the unit rarity ladder")
+local validTiers = { Rare = true, Epic = true, Legendary = true, Mythic = true, God = true }
+for id, t in pairs(Traits.Traits) do
+	assert(validTiers[t.tier], string.format("trait %s has invalid tier %s", id, tostring(t.tier)))
+	assert(Traits.TierWeights[t.tier], "missing tier weight for " .. t.tier)
+end
+-- The trait ladder deliberately omits Common and Secret.
+assert(
+	not validTiers.Common and not validTiers.Secret,
+	"trait ladder must not include Common/Secret"
+)
+ok("all 17 traits sit on Rare/Epic/Legendary/Mythic/God, none on Common or Secret")
+
+print("\nTrait lines match the dev FAQ verbatim")
+local cursed = Traits.Traits.Cursed
+check("Cursed damage        (+400%)", cursed.effect.damage, 4.00)
+check("Cursed health        (+200%)", cursed.effect.health, 2.00)
+check("Cursed crit damage   (+100%)", cursed.effect.critDamage, 1.00)
+check("Cursed odds          (0.02%)", cursed.chance, 0.0002)
+local viking = Traits.Traits.Viking
+check("Viking health        (+750%)", viking.effect.health, 7.50)
+check("Viking crit damage   (+150%)", viking.effect.critDamage, 1.50)
+check("Ghost damage         (+100%)", Traits.Traits.Ghost.effect.damage, 1.00)
+check("Ghost resurrects at 80% stats", Traits.Traits.Ghost.effect.resurrectAtFraction, 0.80)
+check("Cloner summons 2 units instead of 1", Traits.Traits.Cloner.effect.summonCount, 2)
+
+print("\nSPD sign convention is applied consistently")
+-- [C] Resolved: the UI's "-25% SPD" is cooldown, i.e. FASTER. The FAQ's
+-- "25% Faster Attacks" is the same effect. Juggernaut is the only real downside.
+check("Viking attacks FASTER, not slower", viking.effect.attackSpeed, 0.25)
+check("Cursed attacks faster", cursed.effect.attackSpeed, 0.25)
+check(
+	"Juggernaut is the ONE trait with a downside",
+	Traits.Traits.Juggernaut.effect.attackSpeed,
+	-0.10
+)
+local negatives = 0
+for _, t in pairs(Traits.Traits) do
+	if t.effect.attackSpeed and t.effect.attackSpeed < 0 then
+		negatives += 1
+	end
+end
+check("exactly one trait slows the unit down", negatives, 1)
+
+print("\nBoth God traits are present and are the strongest in the table")
+local godTraits = {}
+for id, t in pairs(Traits.Traits) do
+	if t.tier == "God" then
+		table.insert(godTraits, id)
+	end
+end
+check("God traits", #godTraits, 2)
+for _, t in pairs(Traits.Traits) do
+	if t.tier ~= "God" then
+		assert(
+			(t.effect.damage or 0) <= math.max(cursed.effect.damage, viking.effect.damage),
+			"non-God trait " .. t.id .. " out-damages both God traits"
+		)
+	end
+end
+ok("Cursed + Viking, and no lesser trait beats them on damage")
 
 print(string.format("\n%d passed, %d failed", pass, fail))
 if fail > 0 then

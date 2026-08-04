@@ -1,8 +1,8 @@
 --!strict
 --[[
-	Unit rarity ladder.
+	Unit rarity ladder and the roll odds.
 
-	Ground truth: docs/ground-truth/source-game-teardown.md §3
+	Ground truth: docs/ground-truth/source-game-teardown.md §3, §8
 
 	[C] Seven tiers. Confirmed by the complete Essence item set in the source
 	    game's inventory — there is exactly one Essence per rarity — and by the
@@ -11,12 +11,12 @@
 	[C] There is NO "Uncommon" tier. Several public wikis claim one; the essence
 	    set and the in-game index tabs both disprove it.
 
-	[?] The ORDER of Secret vs Mythic is unresolved. Two contradicting signals:
-	      - Robux essence-pack pricing implies  Legendary < Mythic < Secret < God
-	      - Inventory display order + wikis imply Legendary < Secret < Mythic < God
-	    `order` below follows the pricing signal, which is the harder evidence
-	    (real money is rarely mispriced against rarity). Revisit once a Secret and
-	    a Mythic have been rolled side by side.
+	[C] ORDER — RESOLVED. Two independent signals now agree:
+	      pity counters   Legendary ~50  <  Mythic ~100  <  Secret ~250
+	      Robux essence   Legendary R$49 <  Mythic R$129 <  Secret R$249 < God R$499
+	    So the ladder is Common < Rare < Epic < Legendary < Mythic < Secret < God.
+	    God carries NO pity counter — only three are shown on the Roll Machine, and
+	    they belong to Legendary, Mythic and Secret.
 ]]
 
 export type RarityId = "Common" | "Rare" | "Epic" | "Legendary" | "Mythic" | "Secret" | "God"
@@ -85,40 +85,145 @@ local Rarities: { [RarityId]: Rarity } = {
 }
 
 --[[
-	[?] BASE ROLL ODDS ARE UNKNOWN — this is the single biggest hole in our data.
+	ROLL ODDS — OUR OWN DESIGN, not a clone of theirs.
 
-	The source game does not publish drop rates, no wiki has them, and they are not
-	visible in any screenshot. The weights below are OUR OWN starting curve, not a
-	clone of theirs. They are shaped to be consistent with the one hard constraint
-	we do have: the observed pity caps (Legendary ~40-50 rolls, Mythic ~100, and a
-	third counter at ~250 that is probably God or Secret).
+	The source game does not publish drop rates and they cannot be recovered from
+	public data, so the project owner's call was "you pick the odds". These are
+	shaped to satisfy the three hard constraints we DO have:
 
-	Treat these as tuning knobs, not ground truth. They must survive a simulated
-	roll session before they ship.
+	  1. [C] The pity counters imply the natural rates. A tier's pity cap has to sit
+	         a little ABOVE its natural 1-in-N, so pity acts as a safety net rather
+	         than the normal way to get the unit.
+	  2. [C] "God tier is really rare even with luck multiplier." God must stay
+	         extreme at max luck (x13), not merely uncommon.
+	  3. [C] God has no pity counter at all — there is no floor under a dry streak.
+
+	Base chances below are per roll at luck x1.
 ]]
-local BaseWeights: { [RarityId]: number } = {
-	Common = 1000,
-	Rare = 400,
-	Epic = 120,
-	Legendary = 25,
-	Mythic = 8,
-	Secret = 2,
-	God = 0.4,
+local BaseChance: { [RarityId]: number } = {
+	Common = 0.0, -- computed as the remainder; see rollChances()
+	Rare = 0.2500, -- 1 in 4
+	Epic = 0.0800, -- 1 in 12.5
+	Legendary = 0.0286, -- 1 in 35      (pity 50)
+	Mythic = 0.0143, -- 1 in 70      (pity 100)
+	Secret = 0.0056, -- 1 in 180     (pity 250)
+	God = 0.000025, -- 1 in 40,000  (no pity)
 }
 
 --[[
-	[C] Three pity counters are displayed on the Roll Machine simultaneously.
-	[I] They are countdowns that reset when the tier is hit. Caps below are read
-	    off the highest observed values across sessions.
+	Luck does NOT scale every tier equally. If it did, x13 luck would drag God from
+	1-in-40,000 to roughly 1-in-3,000, which flatly contradicts the owner's "really
+	rare even with luck multiplier".
+
+	Instead each tier scales as `chance * luck^exponent`, with the exponent falling
+	as the tier gets rarer. Luck is then strongly felt in the Rare..Mythic band —
+	which is where players actually notice it — while barely moving God.
+
+	At max luck (x13) this yields roughly:
+	    Rare  37%  ·  Epic 15%  ·  Legendary 10%  ·  Mythic 4.5%
+	    Secret 1.6%  ·  God 1 in ~18,700   <- still genuinely rare
+]]
+local LuckExponent: { [RarityId]: number } = {
+	Rare = 0.15,
+	Epic = 0.25,
+	Legendary = 0.50,
+	Mythic = 0.45,
+	Secret = 0.40,
+	God = 0.30,
+}
+
+--[[
+	Per-roll chance of each rarity at a given luck multiplier.
+
+	Common absorbs whatever probability mass is left over, so the table always sums
+	to exactly 1. At extreme luck the rare tiers can crowd Common out entirely;
+	`MIN_COMMON_CHANCE` keeps a floor so the distribution stays well-formed.
+
+	THE LADDER IS STRUCTURALLY ENFORCED. The luck exponents above deliberately RISE
+	from Rare to Legendary, because luck should be felt where players notice it
+	rather than just handing out more Rares. Left unchecked that inverts the ladder
+	at high luck — Legendary would overtake Epic — and luck genuinely does stack
+	here (x13 upgrade * the x10 LUCK server event * Luck Potions), so those levels
+	are reachable in play, not just in theory.
+
+	So after applying luck, every tier is clamped to at most `MAX_TIER_RATIO` of the
+	tier below it. The clamp only ever reduces a chance, so the ordering
+	Rare > Epic > Legendary > Mythic > Secret > God holds at ANY luck value.
+]]
+local MIN_COMMON_CHANCE = 0.01
+local MAX_TIER_RATIO = 0.6
+
+-- Rarest last, Common excluded — it is the remainder tier.
+local ASCENDING: { RarityId } = { "Rare", "Epic", "Legendary", "Mythic", "Secret", "God" }
+
+local function rollChances(luckMultiplier: number): { [RarityId]: number }
+	local luck = math.max(1, luckMultiplier)
+	local chances: { [RarityId]: number } = {}
+
+	for _, id in ASCENDING do
+		chances[id] = BaseChance[id] * luck ^ LuckExponent[id]
+	end
+
+	-- Walk up the ladder, holding each tier strictly below the one beneath it.
+	for i = 2, #ASCENDING do
+		local below, current = ASCENDING[i - 1], ASCENDING[i]
+		chances[current] = math.min(chances[current], chances[below] * MAX_TIER_RATIO)
+	end
+
+	local allocated = 0
+	for _, id in ASCENDING do
+		allocated += chances[id]
+	end
+
+	-- Scale the non-Common tiers back if they would leave Common no room. Uniform
+	-- scaling preserves the ordering established above.
+	local available = 1 - MIN_COMMON_CHANCE
+	if allocated > available then
+		local scale = available / allocated
+		allocated = 0
+		for _, id in ASCENDING do
+			chances[id] *= scale
+			allocated += chances[id]
+		end
+	end
+
+	chances.Common = 1 - allocated
+	return chances
+end
+
+--[[
+	[C] Three pity counters are shown on the Roll Machine, for Legendary, Mythic
+	    and Secret. Observed values across sessions peaked at 43 / 86 / 236, so the
+	    caps sit just above those.
+
+	    God is deliberately absent. It has no pity, which is what makes it the one
+	    tier you cannot grind deterministically.
 ]]
 local PityCaps: { [RarityId]: number } = {
 	Legendary = 50,
 	Mythic = 100,
-	God = 250,
+	Secret = 250,
 }
+
+--[[
+	[C] LIMITED UNITS ARE NOT IN THE ROLL POOL. Per the project owner: limited units
+	    cannot be summoned at all — they come only from the Shop or from events, and
+	    are marked "Limited — Unobtainable" once their window closes (observed on the
+	    Overlord Gacha: Aldedo, Als, Entomancer, Bloodtear).
+
+	    So a unit's rarity does NOT imply it is rollable. When the unit table is
+	    built, every unit needs an explicit source, and the roll pool must filter on
+	    it rather than on rarity alone.
+]]
+export type UnitSource = "roll" | "shop" | "event"
 
 return {
 	Rarities = Rarities,
-	BaseWeights = BaseWeights,
+	BaseChance = BaseChance,
+	LuckExponent = LuckExponent,
+	rollChances = rollChances,
 	PityCaps = PityCaps,
+	MIN_COMMON_CHANCE = MIN_COMMON_CHANCE,
+	MAX_TIER_RATIO = MAX_TIER_RATIO,
+	ASCENDING = ASCENDING,
 }

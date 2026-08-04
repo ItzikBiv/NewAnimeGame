@@ -23,14 +23,14 @@ export type TraitTier = "Rare" | "Epic" | "Legendary" | "Mythic" | "God"
 
 	`attackSpeed` is POSITIVE FOR FASTER attacks.
 
-	[?] UNRESOLVED SIGN CONVENTION — see teardown §7. The dev FAQ describes Cursed
-	    as "25% Faster Attacks", while the in-game Trait Machine renders what looks
-	    like the same trait as "-25% SPD". Either SPD means attack COOLDOWN (lower
-	    is faster, and the two agree), or one of the two surfaces is wrong.
+	[C] SIGN CONVENTION — RESOLVED. The full dev FAQ lists Viking as
+	    "25% Faster Attacks", while the in-game Trait Machine renders the same
+	    trait as "-25% SPD". Both describe the same effect: SPD is the attack
+	    COOLDOWN, so lowering it by 25% makes the unit attack faster.
 
-	    This inverts the effect of the strongest trait in the game. It MUST be
-	    resolved before attack-speed code is written. Until then this file follows
-	    the dev FAQ, because it is the more authoritative source.
+	    Therefore: a NEGATIVE "% SPD" in the game's UI is a POSITIVE attackSpeed
+	    here. Juggernaut's "10% Slower Attacks" is the only genuine downside in the
+	    table, and is the only negative attackSpeed below.
 ]]
 export type TraitEffect = {
 	damage: number?,
@@ -41,6 +41,8 @@ export type TraitEffect = {
 	cash: number?,
 	-- Cloner only: number of units summoned per placement. [C]
 	summonCount: number?,
+	-- Ghost only: revives once on death at this fraction of its stats. [C]
+	resurrectAtFraction: number?,
 }
 
 export type Trait = {
@@ -146,6 +148,13 @@ local Traits: { [string]: Trait } = {
 		-- Unique mechanic, not a stat line: summons 2 units instead of 1. [C]
 		effect = { damage = 0.40, health = 0.60, summonCount = 2 },
 	},
+	Ghost = {
+		id = "Ghost",
+		displayName = "Ghost",
+		tier = "Mythic",
+		-- Second unique mechanic: resurrects on death at 80% stats. [C]
+		effect = { damage = 1.00, health = 1.00, resurrectAtFraction = 0.80 },
+	},
 	Superior = {
 		id = "Superior",
 		displayName = "Superior",
@@ -174,11 +183,7 @@ local Traits: { [string]: Trait } = {
 		},
 		chance = 0.0002,
 	},
-	--[[
-		Viking appears in the Trait Machine but NOT in the dev FAQ list — it is
-		newer content added after that FAQ post. Its stat line is read directly off
-		the machine, including the "-25% SPD" that triggers the open question above.
-	]]
+	-- The second God trait. Trades Cursed's raw damage for a huge health pool. [C]
 	Viking = {
 		id = "Viking",
 		displayName = "Viking",
@@ -186,7 +191,9 @@ local Traits: { [string]: Trait } = {
 		effect = {
 			damage = 2.00,
 			health = 7.50,
-			attackSpeed = -0.25,
+			-- FAQ: "25% Faster Attacks". The Trait Machine shows this as "-25% SPD"
+			-- because SPD is cooldown. Same effect, opposite sign. See header.
+			attackSpeed = 0.25,
 			critChance = 0.50,
 			critDamage = 1.50,
 		},

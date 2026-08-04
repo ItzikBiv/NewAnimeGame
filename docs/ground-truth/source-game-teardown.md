@@ -79,9 +79,19 @@ Common · Rare · Epic · Legendary · Secret · Mythic · God
 **[C]** There is **no "Uncommon" tier.** Several public wikis list one; the essence set and the
 index tabs both disprove it. Trust this document.
 
-**[I]** Ordering above Legendary is the best reading of the evidence but is not nailed down. The
-inventory lists essences as `Secret, Legendary, Mythic, God`, while the pity counters get
-progressively longer for `Legendary → Mythic → (third)`. See [Open Questions](#open-questions).
+**[C] Ordering — RESOLVED.** Previously an open question. Two independent signals agree:
+
+| Signal | Reading |
+|---|---|
+| Pity counter length | Legendary ~50 < Mythic ~100 < Secret ~250 |
+| Robux essence price | Legendary R$49 < Mythic R$129 < Secret R$249 < God R$499 |
+
+So the ladder is **Common < Rare < Epic < Legendary < Mythic < Secret < God**, and the wikis
+claiming Secret sits *below* Mythic are wrong.
+
+This also settles what the third pity counter is: the Roll Machine shows exactly three, for
+**Legendary, Mythic and Secret**. **God has no pity counter at all** — there is no floor under a
+dry streak, which is precisely what keeps it out of reach.
 
 **[C]** Each rolled unit shows a **cash value** on its podium. Observed:
 
@@ -105,17 +115,34 @@ hand-authored field on each unit, so treat it as unit data, not a formula.
 label *above* the rarity on the unit card (e.g. `Diamond` / `Legendary` / `Sakuna`), with a distinct
 visual effect in battle.
 
-**[C]** Mutations confirmed from the Index tabs:
+**[C]** Mutations confirmed from the Index tabs, plus **Slayer** from the dev FAQ:
 
 ```
-NORMAL · GOLD · DIAMOND · DEMON · DESTROYER · HOLLOW · ASTRONAUT
+NORMAL · GOLD · DIAMOND · DEMON · SLAYER · DESTROYER · HOLLOW · ASTRONAUT
 ```
 
-**[I]** More exist off-screen. Public sources additionally name *Titan, Nen, Quincy, Admin,
-Dragonborn, Beast, Arrancar* — unverified here.
+**[C]** `[HINT] Mutation Events start every 15 minutes!` — the hint bar. The dev FAQ gives the
+**exact schedule**, and it explains what the hint means: the 15 minutes is a *rotation*, not a
+single recurring event. Each mutation is rollable **only during its slot**:
 
-**[C]** `[HINT] Mutation Events start every 15 minutes!` — an in-game hint bar. Mutation
-availability is **time-gated on a server-wide 15-minute cycle**.
+| Server clock | Mutation |
+|---|---|
+| `xx:00` | **Slayer** |
+| `xx:15` | **Demon** |
+| `xx:30` | **Destroyer** |
+| `xx:45` | **Hollow** |
+| — | **Astronaut** — *"Every Admin Abuse"*, never on the clock |
+
+**[I]** Normal, Gold and Diamond have no slot, so they are treated as always-available.
+That makes the live pool at any moment **3 baseline mutations + exactly 1 event mutation.**
+
+> This is a bigger deal than it looks. Mutation chasing is not "roll more" — it is **"roll at
+> the right minute."** It converts the gacha from a pure money sink into a scheduled activity
+> that pulls players back on a 15-minute heartbeat. Any clone that makes all mutations
+> permanently rollable loses that retention hook entirely.
+
+**[C]** **Astronaut is admin-only** — it is listed among Admin Abuse rewards, not on the clock.
+It cannot be farmed, which is what makes it the scarcest mutation.
 
 **[C]** Paid bundles advertise `Chance of Mutation` as a selling point.
 
@@ -145,6 +172,20 @@ unit B, then drop B onto A's tile.
 **[I]** This implies a binary merge tree (2×Lv1 → Lv2, 2×Lv2 → Lv3 …), so a Lv*n* unit costs
 2^(n−1) base copies. Observed levels are low (`Lv. 1`, `Lv. 2`) even on a mature 50M-gold account,
 which is consistent with an expensive tree.
+
+### Trait retention on merge — **[C]**
+
+A separate FAQ answer, and easy to get wrong:
+
+> *"Firstly place the unit you wanted to keep the trait, and then put the other unit you don't want
+> the trait or doesn't have a trait above it when fusing."*
+
+**The unit placed FIRST (the base) keeps its trait. The unit dropped ON TOP is consumed and its
+trait is destroyed.**
+
+This makes merge order a real decision with a real cost — players lose traits to it, which is why
+the question is in the FAQ at all. The merge UI must make which unit is the base unmistakable, or
+we will reproduce the bug rather than the feature.
 
 ---
 
@@ -219,24 +260,31 @@ unit. The machine has an `Auto Roll` toggle, an `Auto Stop` toggle, and a `TRAIT
 | **Mythic** | Entrepreneur | +45% Damage, +25% Health, 10% Faster Attacks, +65% Money |
 | | Reaper | +90% Damage, +35% Health, 16% Faster Attacks, +35% Crit Chance, +45% Crit Damage |
 | | Cloner | +40% Damage, +60% Health, **summons 2 units instead of 1** |
+| | **Ghost** | +100% Damage, +100% Health, **resurrects on death with 80% stats** |
 | | Superior | +200% Damage, +100% Health, 20% Faster Attacks, +40% Crit Chance, +65% Crit Damage |
 | **God** | Cursed | +400% Damage, +200% Health, 25% Faster Attacks, +65% Cash, +50% Crit Chance, +100% Crit Damage |
+| | **Viking** | +200% Damage, +750% Health, 25% Faster Attacks, +50% Crit Chance, +150% Crit Damage |
 
-**[C]** One further trait appears in the Trait Machine but **not** in the FAQ list — newer content:
+**17 traits total.** Two of the Mythics — **Cloner** and **Ghost** — are not stat lines at all but
+unique mechanics (extra summon, one revive). They need real implementation, not a multiplier.
 
-| Trait | Effect | Odds |
-|---|---|---|
-| **Viking** | +200% DMG, +750% HP, −25% SPD, +50% Crit Chance, +150% Crit Damage | **0.02%** |
+**[C]** There are **two God traits**, and they are deliberately different shapes: Cursed is the
+damage-and-economy pick, Viking is the survivability pick (+750% Health). Neither dominates.
 
 **[C]** God-tier trait odds are **0.02%**, displayed in-game.
 
 **[C]** Trait tiers are **Rare → Epic → Legendary → Mythic → God**. Note this ladder **omits
 Common and Secret** — it is *not* the same ladder as unit rarity. Do not share one enum.
 
-**[?] Sign convention on `SPD`.** The FAQ says Cursed gives *"25% Faster Attacks"*; the Trait
-Machine renders what appears to be the same trait as `−25% SPD`. Either `SPD` means *attack
-cooldown* (lower = faster, so the two agree) or one surface is wrong. **Resolve before implementing
-attack speed** — it inverts the effect of the single strongest trait in the game.
+### `SPD` sign convention — **[C] RESOLVED**
+
+Previously flagged as a blocking open question. The full FAQ settles it: it lists Viking as
+**"25% Faster Attacks"**, while the Trait Machine renders the same trait as **"−25% SPD"**.
+
+Both describe one effect. **`SPD` is the attack *cooldown*** — lowering it by 25% makes the unit
+attack faster. So a negative `% SPD` in the game's UI is a *positive* attack-speed bonus.
+
+**Juggernaut's "10% Slower Attacks" is the only genuine downside in the entire trait table.**
 
 **[C]** Trait Shard packs (Robux): `1× = R$19`, `10× = R$179`, `50× = R$899`, `100× = R$1749` *(BEST)*.
 
@@ -252,7 +300,7 @@ The player's current luck multiplier is shown beside it (`x10.5`, `x13` — matc
 ```
 Legendary in 43 Rolls
 Mythic    in 42 Rolls
-???       in 91 Rolls      ← third label obscured in every capture
+Secret    in 91 Rolls      ← label obscured in captures; identified in §3
 ```
 
 **[C]** Readings across sessions:
@@ -271,7 +319,41 @@ Mythic ~100, third ~250.
 the Luck Upgrade.
 
 **[?] Base drop rates per rarity are not published anywhere** and cannot be read off a screenshot.
-This is the single biggest hole in our data. See [Open Questions](#open-questions).
+**Project owner's call: we design our own.** See [Our roll odds](#our-roll-odds) below.
+
+### Limited units are not in the roll pool — **[C]**
+
+Per the project owner: **limited units cannot be summoned at all.** They come only from the **Shop**
+or from **events**, and are marked `Limited — Unobtainable` once their window closes (observed on
+the Overlord Gacha: `Aldedo`, `Als`, `Entomancer`, `Bloodtear`).
+
+**A unit's rarity does not imply it is rollable.** Every unit needs an explicit source
+(`roll` / `shop` / `event`) and the roll pool must filter on that, not on rarity.
+
+### Our roll odds
+
+Designed, not cloned — a 1:1 numeric match is impossible from public data. Shaped to satisfy the
+three constraints we *do* have: the pity caps imply the natural rates; God must stay extreme even
+at max luck; God has no pity floor.
+
+| Rarity | Base (luck x1) | At max luck (x13) |
+|---|---|---|
+| Common | 62.1% | 32.9% |
+| Rare | 25% | 36.7% |
+| Epic | 8% | 15.2% |
+| Legendary | 1 in 35 | 1 in 11 |
+| Mythic | 1 in 70 | 1 in 22 |
+| Secret | 1 in 180 | 1 in 64 |
+| **God** | **1 in 40,000** | **1 in 18,530** |
+
+Luck scales each tier by `luck^exponent` with the exponent chosen per tier, so luck is felt
+strongly in the Legendary/Mythic band (**3.2×** at max) while barely moving God (**2.2×**) —
+matching the owner's *"god tier is really rare even with luck multiplier"*.
+
+Because those exponents rise with rarity, unchecked they would **invert the ladder at high luck**,
+and luck genuinely stacks here (x13 upgrade × the x10 LUCK event × Luck Potions). So each tier is
+clamped to at most 60% of the tier below it. The ordering therefore holds at *any* luck value —
+regression-tested up to x10⁹.
 
 ---
 
@@ -285,6 +367,24 @@ This is the single biggest hole in our data. See [Open Questions](#open-question
 | **Evolution Machine** | **[C]** | Sits beside the Trait Machine. **[I]** consumes the special items (Six Eyes, Cursed Finger, Cursed Womb, Sakuna's Fragment) to evolve units. Contents never captured. |
 | **Infinite Tower** | **[C]** | Separate mode, entered with an **Infinite Ticket**. *"Buy tickets here to enter the Infinite Tower."* Has its own `Highest Floor` leaderboard. |
 | **Spin Wheel** | **[C]** | `Free Spin in 00:26:34` → ~30-minute free-spin timer. |
+| **Admin Abuse (AA)** | **[C]** | A live, staff-run event on a published schedule. See below. |
+
+### Admin Abuse — **[C]**
+
+A scheduled, staff-triggered live event. Per the dev FAQ it delivers:
+
+- **Free items** — traits, essence, and more
+- **The Astronaut mutation** — its *only* source
+- **An obby in the Lobby** — complete it for rewards
+- **A boss spawn** — defeat it for rewards
+
+This is the game's live-ops layer, and it carries real design weight: it is the only route to the
+rarest mutation, and it is the only content that isn't a grid battle. It also implies **a lobby
+space separate from the player's base arena**, which nothing else in the teardown required.
+
+**[I]** The name suggests it is triggered manually by staff rather than on a hard timer, though a
+schedule is published in the Discord's events channel. Our clone would need either a scheduled job
+or an admin command — a design call for the GDD, not a fact about the source game.
 
 ---
 
@@ -309,9 +409,17 @@ This is the single biggest hole in our data. See [Open Questions](#open-question
 `Luck Potion (x13)` · `Gold Potion (x4)` · `Super Time Potion (x1)`
 
 **[C]** Essence packs sell for Robux: `Legendary 10× = R$49`, `Mythic 10× = R$129`,
-`Secret 10× = R$249`, `God 10× = R$499`. **[I]** This pricing ladder implies rarity order
-`Legendary < Mythic < Secret < God` — which **contradicts** the Mythic-above-Secret reading in §3.
-Flagged in Open Questions.
+`Secret 10× = R$249`, `God 10× = R$499`. This pricing ladder is one of the two signals that
+resolved the rarity order in §3.
+
+**[C]** How to get **God Essence**, per the dev FAQ — exactly two routes:
+
+1. **Farm waves** — small chance per kill, *"recommended to afk"*
+2. **Buy with Robux** — at the Clone Machine
+
+That first route is worth noting: the devs' own advice for their rarest crafting material is *leave
+the game running*. Idle throughput is a first-class progression path here, not an afterthought —
+which is consistent with the `Auto` toggle and the `2x` speed control being permanent HUD fixtures.
 
 ---
 
@@ -415,24 +523,32 @@ individual **`Auto`** toggle on each. Skills are attached to specific units (`Bi
 
 Ranked by how much they block implementation.
 
-1. **[?] Base roll odds per rarity.** Not published by the devs, not on any wiki, not visible in any
-   screenshot. **Blocks the entire gacha.** Options: (a) reverse-engineer from a long recorded roll
-   session, (b) infer from the pity caps, (c) design our own curve and tune it. *Recommend (c) with
-   (b) as a sanity bound — a 1:1 numeric clone is not achievable from public data.*
-2. **[?] Rarity order above Legendary.** Essence pricing implies `Legendary < Mythic < Secret < God`;
-   inventory ordering and wiki claims imply Secret sits below Mythic. One roll of a Secret and a
-   Mythic side by side settles it.
-3. **[?] `SPD` sign convention** (§7). Inverts the strongest trait in the game.
-4. **[?] Upgrade cost curves.** One price point captured per upgrade. Need ~3 consecutive levels of
-   any one upgrade to fit.
-5. **[?] Wave scaling** — enemy HP/count/reward as a function of wave number. Two anchors only
-   (Wave 151 idle, Wave 174 with 8 enemies at ~481k HP).
-6. **[?] Evolution Machine contents and recipes.** Never captured.
-7. **[?] Infinite Tower rules** — floor scaling, rewards, ticket cost.
-8. **[?] Full mutation list and their multipliers.** Seven confirmed, more exist.
-9. **[?] Checkpoint system.** Public sources describe wave-skip checkpoints; **no screenshot
-   confirms this.** Do not implement on wiki evidence alone.
-10. **[?] Skill system detail** — what skills exist, cooldowns, how they attach to units.
+1. **[?] Upgrade cost curves.** One price point captured per upgrade. Need ~3 consecutive levels of
+   any one upgrade to fit properly. Current curves are placeholders bounded only to an order of
+   magnitude.
+2. **[?] Wave scaling** — enemy HP/count/reward as a function of wave number. Two anchors only
+   (Wave 151 idle, Wave 174 with 8 enemies at ~481k HP). **Needed for the vertical slice.**
+3. **[?] Mutation multipliers.** The full mutation *list* and *schedule* are now confirmed, but not
+   one multiplier is visible anywhere. Ours is a designed ladder topping out at 6.5×.
+4. **[?] Evolution Machine contents and recipes.** Never captured. We know the likely inputs
+   (Six Eyes, Cursed Finger, Cursed Womb, Sakuna's Fragment) but not what they produce.
+5. **[?] Infinite Tower rules** — floor scaling, rewards, ticket cost.
+6. **[?] Skill system detail** — what skills exist, cooldowns, how they attach to units. The HUD
+   shows per-skill charge counts and individual `Auto` toggles, but no skill list was captured.
+7. **[?] Trait roll odds below God.** Only the God tier's 0.02% is confirmed.
+8. **[?] Checkpoint system.** Public sources describe wave-skip checkpoints; **no screenshot or FAQ
+   answer confirms this.** Do not implement on wiki evidence alone.
+9. **[?] Admin Abuse trigger** — manual staff action vs. scheduled job.
+
+### Resolved
+
+- ~~Base roll odds~~ — unrecoverable from public data. Project owner's call: **we design our own.**
+  Documented in §8, implemented in `Rarities.luau`, regression-tested.
+- ~~Rarity order above Legendary~~ — **resolved** in §3. Pity length and Robux pricing agree:
+  `Legendary < Mythic < Secret < God`. The third pity counter is Secret; God has none.
+- ~~`SPD` sign convention~~ — **resolved** in §7. `SPD` is cooldown, so "−25% SPD" *is*
+  "25% Faster Attacks". Juggernaut is the only real downside in the table.
+- ~~Full mutation list~~ — **resolved** in §4. Eight mutations, with the exact event clock.
 
 ---
 
@@ -461,3 +577,8 @@ incorporated: `IMG_1336`, `IMG_1339`, `IMG_1341`, `IMG_1342`.
 | **Discord FAQ — traits + merge rule** | `IMG_3798`, `IMG_3799` |
 
 Screenshots live in the owner's Drive folder `1pyl1_njve1vod2PiIG0aTfdn74-qZgaI`.
+
+**Full Discord FAQ text** supplied by the project owner (2026-08-04) — the authoritative source for
+the trait table, the merge and trait-retention rules, the mutation event clock, God Essence sources,
+and the Admin Abuse event. Where the FAQ and a screenshot disagree, **the FAQ wins**: it is the
+developers' own words, and it resolved three open questions that screenshots alone could not.
