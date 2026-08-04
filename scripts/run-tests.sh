@@ -11,7 +11,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONFIG="$ROOT/src/shared/Config"
+SHARED="$ROOT/src/shared"
 BUILD="$(mktemp -d)"
 trap 'rm -rf "$BUILD"' EXIT
 
@@ -30,26 +30,40 @@ cat >"$OUT" <<'STUB'
 Color3 = { fromRGB = function(r, g, b) return { r = r, g = g, b = b } end }
 STUB
 
-# Inline each config module as a function call, binding it to a global of the
-# same name so the test file can reach it.
+# Inline each pure module as a function call, binding it to a global named after
+# the file so the test files can reach it.
 #
 # Order matters: a module listed here may only require modules listed before it.
-# `require(script.Parent.Foo)` is rewritten to the global `Foo`, since there is no
-# Roblox instance tree outside Studio.
-for module in Rarities Mutations Traits Upgrades Waves Power; do
+# Any `require(script.Parent....Foo)` is rewritten to the global `Foo`, since
+# there is no Roblox instance tree outside Studio.
+MODULES=(
+	Config/Rarities
+	Config/Mutations
+	Config/Traits
+	Config/Upgrades
+	Config/Waves
+	Config/Power
+	Save/Schema
+)
+
+names=()
+for path in "${MODULES[@]}"; do
+	name="${path##*/}"
+	names+=("$name")
 	{
-		echo "local function _load_${module}()"
-		sed -E 's/require\(script\.Parent\.([A-Za-z0-9_]+)\)/\1/g' "$CONFIG/${module}.luau"
+		echo "local function _load_${name}()"
+		sed -E 's/require\(script(\.Parent)+(\.[A-Za-z0-9_]+)*\.([A-Za-z0-9_]+)\)/\3/g' \
+			"$SHARED/${path}.luau"
 		echo "end"
-		echo "${module} = _load_${module}()"
+		echo "${name} = _load_${name}()"
 	} >>"$OUT"
 done
 
-echo 'print("config modules parsed: Rarities, Mutations, Traits, Upgrades, Waves, Power\n")' >>"$OUT"
+echo "print(\"modules parsed: ${names[*]}\n\")" >>"$OUT"
 
 # Each suite runs in its own chunk so a failure in one still reports the other.
 status=0
-for suite in config-invariants design-invariants; do
+for suite in config-invariants design-invariants save-invariants; do
 	SUITE_OUT="$BUILD/${suite}.luau"
 	cp "$OUT" "$SUITE_OUT"
 	{
