@@ -49,12 +49,16 @@ Build a place file without Studio:
 rojo build -o RollAnimeToFight.rbxlx
 ```
 
-Lint and format:
+Run everything CI checks, before pushing:
 
 ```sh
-selene src
-stylua --check src
+./scripts/check.sh          # stylua + selene + rojo build + all test suites
+./scripts/run-tests.sh      # just the headless test suites
 ```
+
+`check.sh` falls back to an offline selene std (`scripts/roblox-offline.yml`) when the Roblox API
+dump host is unreachable, so linting still runs in sandboxed environments. CI remains authoritative
+— it lints with the full `std = "roblox"`.
 
 ## Status
 

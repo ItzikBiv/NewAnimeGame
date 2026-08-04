@@ -1,0 +1,20 @@
+# Offline selene standard library.
+#
+# CI lints with `std = "roblox"` (see ../selene.toml), which is authoritative but
+# needs a Roblox API dump fetched from setup.rbxcdn.com at run time. That host is
+# unreachable from some sandboxed dev environments, which means selene cannot run
+# there at all and every lint mistake costs a CI round trip.
+#
+# This std bases off selene's built-in `luau` — so all Luau-specific lints, like
+# manual_table_clone, still fire — and declares only the Roblox globals this
+# project actually touches. It is NOT a substitute for the real Roblox std: it
+# will not catch a misspelled Roblox API. Treat it as a fast pre-push check.
+base: luau
+
+globals:
+  game:
+    any: true
+  script:
+    any: true
+  Color3:
+    any: true

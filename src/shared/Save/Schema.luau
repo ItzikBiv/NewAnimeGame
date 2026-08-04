@@ -46,10 +46,9 @@ local function defaultProfile(): Profile
 		essence[rarityId] = 0
 	end
 
-	local upgrades: { [string]: number } = {}
-	for upgradeId, startingLevel in pairs(Upgrades.StartingLevels) do
-		upgrades[upgradeId] = startingLevel
-	end
+	-- A shallow copy, so a new upgrade added to config lands in new profiles for
+	-- free and the clone can be mutated without touching the config table.
+	local upgrades: { [string]: number } = table.clone(Upgrades.StartingLevels)
 
 	-- [C] Pity persists across sessions. The source game's counters survive a
 	-- rejoin; losing them on disconnect would be a player-hostile bug in the most
