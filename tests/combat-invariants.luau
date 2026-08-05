@@ -254,6 +254,46 @@ expect("cleared several waves in a row", wavesCleared >= 5, string.format("%d wa
 expect("and banked gold doing it", loop.gold > 0, string.format("%d gold", loop.gold))
 expect("profile survives the full loop", (Schema.validate(loop)))
 
+print("\nCheckpoints bank progress, and a loss returns you to one")
+-- [C] Owner: losing sends you back to wave 1 or the furthest checkpoint reached,
+-- and which one is a setting. Nothing else is taken away.
+check("wave 10 is a checkpoint", Waves.isCheckpointWave(10), true)
+check("wave 11 is not", Waves.isCheckpointWave(11), false)
+check("checkpoint below wave 34", Waves.checkpointFor(34), 30)
+check("below wave 10 there is only wave 1", Waves.checkpointFor(7), 1)
+
+local cp = squadOf(4, "Legendary")
+cp.wave = 10
+local cpRun = Wave.simulate(cp, 10)
+if cpRun.outcome == "cleared" then
+	Wave.commit(cp, cpRun)
+	check("clearing wave 10 banks the checkpoint", cp.checkpointWave, 10)
+end
+
+local lost2 = squadOf(1, "Common")
+lost2.wave = 34
+lost2.checkpointWave = 30
+lost2.gold = 5000
+lost2.restartAtCheckpoint = true
+local lostRun2 = Wave.simulate(lost2, 34, 0.1, 60)
+expect("the wave was lost", lostRun2.outcome == "failed", lostRun2.outcome)
+Wave.commitLoss(lost2, lostRun2)
+check("sent back to the checkpoint", lost2.wave, 30)
+check("gold survives a loss", lost2.gold, 5000)
+
+local restart1 = squadOf(1, "Common")
+restart1.wave = 34
+restart1.checkpointWave = 30
+restart1.restartAtCheckpoint = false
+Wave.commitLoss(restart1, lostRun2)
+check("with the setting off, back to wave 1", restart1.wave, 1)
+
+expect(
+	"commitLoss refuses a wave that was not lost",
+	not (Wave.commitLoss(squadOf(1, "Common"), { outcome = "cleared" })),
+	"a clear must never rewind the player"
+)
+
 print(string.format("\n%d passed, %d failed", pass, fail))
 if fail > 0 then
 	error(string.format("%d check(s) failed", fail))

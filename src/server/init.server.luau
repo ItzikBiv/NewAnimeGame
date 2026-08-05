@@ -53,5 +53,8 @@ end)
 Guard.connect(Remotes.TO_SERVER.RequestAutoToggle, function(player)
 	return GameService.handleAutoToggle(player)
 end)
+Guard.connect(Remotes.TO_SERVER.RequestRestartModeToggle, function(player)
+	return GameService.handleRestartModeToggle(player)
+end)
 
 print("[RollAnimeToFight] server ready")

@@ -135,7 +135,7 @@ end)
 local waveRunning = false
 
 local waveButton
-waveButton = button("START WAVE", UDim2.new(0, 172, 0, 152), Color3.fromRGB(40, 160, 80), function()
+waveButton = button("FIGHT", UDim2.new(0, 172, 0, 152), Color3.fromRGB(40, 160, 80), function()
 	if waveRunning then
 		Remotes.get(Remotes.TO_SERVER.RequestWaveStop):FireServer()
 	else
@@ -152,9 +152,18 @@ local autoButton = button(
 	end
 )
 
+local restartButton = button(
+	"Restart: —",
+	UDim2.new(0, 492, 0, 152),
+	Color3.fromRGB(90, 70, 140),
+	function()
+		Remotes.get(Remotes.TO_SERVER.RequestRestartModeToggle):FireServer()
+	end
+)
+
 local function setWaveRunning(running: boolean)
 	waveRunning = running
-	waveButton.Text = running and "STOP" or "START WAVE"
+	waveButton.Text = running and "STOP" or "FIGHT"
 	waveButton.BackgroundColor3 = running and Color3.fromRGB(190, 60, 60)
 		or Color3.fromRGB(40, 160, 80)
 end
@@ -275,6 +284,9 @@ local function redraw()
 		waveLabel.Text = string.format("Wave: %d", profile.wave)
 	end
 	autoButton.Text = profile.autoWave and "Auto: ON" or "Auto: OFF"
+	restartButton.Text = profile.restartAtCheckpoint
+			and string.format("Restart: wave %d", profile.checkpointWave or 1)
+		or "Restart: wave 1"
 	autoButton.BackgroundColor3 = profile.autoWave and Color3.fromRGB(60, 150, 90)
 		or Color3.fromRGB(55, 90, 150)
 
@@ -419,7 +431,13 @@ Remotes.get(Remotes.TO_CLIENT.WaveTick).OnClientEvent:Connect(function(tick)
 	elseif tick.outcome == "cleared" then
 		say(string.format("Wave %d cleared! +%d gold", tick.wave, tick.goldEarned), true)
 	else
-		say(string.format("Wave %d failed — merge or roll for more power", tick.wave))
+		say(
+			string.format(
+				"Wave %d lost — back to wave %d. Merge or roll for more power.",
+				tick.wave,
+				profile and profile.wave or 1
+			)
+		)
 	end
 end)
 

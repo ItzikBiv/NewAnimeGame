@@ -21,6 +21,7 @@ local TO_SERVER = {
 	RequestWaveStart = "RequestWaveStart",
 	RequestWaveStop = "RequestWaveStop",
 	RequestAutoToggle = "RequestAutoToggle",
+	RequestRestartModeToggle = "RequestRestartModeToggle",
 }
 
 -- Server -> Client.

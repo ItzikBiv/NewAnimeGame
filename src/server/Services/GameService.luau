@@ -220,6 +220,17 @@ function GameService.handleAutoToggle(player: Player): (boolean?, string?)
 	return true
 end
 
+-- Wave 1, or the furthest checkpoint banked. The player's call.
+function GameService.handleRestartModeToggle(player: Player): (boolean?, string?)
+	local profile = DataService.get(player)
+	if not profile then
+		return false, "profile not loaded"
+	end
+	profile.restartAtCheckpoint = not profile.restartAtCheckpoint
+	replicate(player)
+	return true
+end
+
 local function tickWaves(dt: number)
 	for player, state in activeWaves do
 		local profile = DataService.get(player)
@@ -244,6 +255,10 @@ local function tickWaves(dt: number)
 			local cleared = state.outcome == "cleared"
 			if cleared then
 				Wave.commit(profile, state)
+			else
+				-- Losing sends the player back to their restart point. Gold, units
+				-- and upgrades all survive; only position is lost.
+				Wave.commitLoss(profile, state)
 			end
 			activeWaves[player] = nil
 			replicate(player)

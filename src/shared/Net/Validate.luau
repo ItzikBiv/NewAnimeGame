@@ -138,6 +138,13 @@ local validators: { [string]: Validator } = {
 		end
 		return true, nil
 	end,
+
+	RequestRestartModeToggle = function(payload: any): (boolean, string?)
+		if payload ~= nil then
+			return false, "RequestRestartModeToggle takes no arguments"
+		end
+		return true, nil
+	end,
 }
 
 --[[

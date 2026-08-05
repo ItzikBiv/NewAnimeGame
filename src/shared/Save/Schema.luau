@@ -46,6 +46,8 @@ export type Profile = {
 	rollCount: number,
 	nextUid: number,
 	autoWave: boolean,
+	checkpointWave: number,
+	restartAtCheckpoint: boolean,
 	currencies: { traitShards: number, essence: { [string]: number } },
 	upgrades: { [string]: number },
 	pity: { [string]: number },
@@ -80,7 +82,19 @@ local function defaultProfile(): Profile
 		-- [C] The source game has a persistent "Auto" toggle on the wave HUD, and
 		-- the devs recommend AFK farming — so this is a saved preference, not a
 		-- per-session one.
-		autoWave = false,
+		-- Owner's call: auto should be the default, not opt-in. The devs of the
+		-- source game recommend AFK farming, so idle is the expected mode of play.
+		autoWave = true,
+		--[[
+			[C] CHECKPOINTS — previously open question 8, now answered by the owner:
+			losing sends you back to wave 1 or to the furthest checkpoint you reached,
+			and which one is a setting.
+
+			This is what makes an endless run survivable. Without it a loss at wave 40
+			throws away the whole session, which no idle game does.
+		]]
+		checkpointWave = 1,
+		restartAtCheckpoint = true,
 		-- Server-issued unit ids. Units are keyed by uid, never by index — merges
 		-- and trades reorder the collection constantly, and index-keyed references
 		-- break under exactly that.

@@ -53,6 +53,25 @@ local BOSS_WAVE_INTERVAL = 10
 local BOSS_HP_MULTIPLIER = 8
 local BOSS_GOLD_MULTIPLIER = 5
 
+--[[
+	[C] Checkpoints are permanent milestones — clearing one means a later loss
+	sends you back here rather than to wave 1. [OURS] every 10th wave, aligning
+	them with boss waves so the boss reads as "the thing that banks your progress".
+]]
+local CHECKPOINT_INTERVAL = 10
+
+local function isCheckpointWave(wave: number): boolean
+	return wave % CHECKPOINT_INTERVAL == 0
+end
+
+-- The highest checkpoint at or below `wave`. Wave 1 is always a valid restart.
+local function checkpointFor(wave: number): number
+	if wave < CHECKPOINT_INTERVAL then
+		return 1
+	end
+	return wave - (wave % CHECKPOINT_INTERVAL)
+end
+
 local function isBossWave(wave: number): boolean
 	return BOSS_WAVE_INTERVAL > 0 and wave % BOSS_WAVE_INTERVAL == 0
 end
@@ -129,6 +148,9 @@ return {
 	BOSS_WAVE_INTERVAL = BOSS_WAVE_INTERVAL,
 	BOSS_HP_MULTIPLIER = BOSS_HP_MULTIPLIER,
 
+	CHECKPOINT_INTERVAL = CHECKPOINT_INTERVAL,
+	isCheckpointWave = isCheckpointWave,
+	checkpointFor = checkpointFor,
 	isBossWave = isBossWave,
 	baseEnemyHP = baseEnemyHP,
 	enemyHP = enemyHP,

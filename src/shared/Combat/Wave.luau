@@ -213,6 +213,11 @@ local function commit(profile: any, state: WaveState): (boolean, string?)
 	profile.gold += state.goldEarned
 	profile.wave = state.wave + 1
 
+	-- Clearing a checkpoint wave banks it permanently.
+	if Waves.isCheckpointWave(state.wave) then
+		profile.checkpointWave = math.max(profile.checkpointWave or 1, state.wave)
+	end
+
 	if profile.wave > profile.stats.highestWave then
 		profile.stats.highestWave = profile.wave
 	end
@@ -223,8 +228,26 @@ local function commit(profile: any, state: WaveState): (boolean, string?)
 	return true, nil
 end
 
+--[[
+	Apply a LOST wave: send the player back to their restart point.
+
+	Which point is the player's setting — wave 1, or the furthest checkpoint they
+	banked. Nothing is taken away except position; gold, units and upgrades all
+	survive a loss.
+]]
+local function commitLoss(profile: any, state: WaveState): (boolean, string?)
+	if state.outcome ~= "failed" then
+		return false, "wave was not lost: " .. state.outcome
+	end
+	profile.wave = if profile.restartAtCheckpoint
+		then math.max(profile.checkpointWave or 1, 1)
+		else 1
+	return true, nil
+end
+
 return {
 	begin = begin,
+	commitLoss = commitLoss,
 	tick = tick,
 	simulate = simulate,
 	commit = commit,
