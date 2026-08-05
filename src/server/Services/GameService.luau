@@ -1,0 +1,269 @@
+--!strict
+--[[
+	The server's game logic: rolling, merging, placing, upgrading, waves.
+
+	Design: docs/planning/architecture.md §1, §6
+
+	NOT VERIFIABLE OUTSIDE STUDIO — it touches Players, remotes and task
+	scheduling. Everything it decides, though, comes from the pure modules under
+	Shared, which ARE tested. This layer owns ownership checks, replication and
+	timing; it owns no rules.
+
+	Every handler here assumes the payload is already rate-limited and
+	well-formed — Guard did that. What it must still check is OWNERSHIP, because
+	Guard is pure and has no profile to check against.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Rarities = require(Shared.Config.Rarities)
+local Upgrades = require(Shared.Config.Upgrades)
+local Mutations = require(Shared.Config.Mutations)
+local Roll = require(Shared.Gacha.Roll)
+local Inventory = require(Shared.Inventory.Inventory)
+local Merge = require(Shared.Inventory.Merge)
+local Grid = require(Shared.Grid.Grid)
+local Wave = require(Shared.Combat.Wave)
+local Remotes = require(Shared.Net.Remotes)
+
+local DataService = require(script.Parent.DataService)
+
+local GameService = {}
+
+local ROLL_COST = 100
+local TICK_RATE = 0.2
+
+-- Live wave state per player. Not persisted: an interrupted wave is simply lost,
+-- which is the honest behaviour — crediting a partial wave would let a player
+-- farm gold by disconnecting mid-fight.
+local activeWaves: { [Player]: any } = {}
+
+--[[
+	Server-side RNG. Never seeded from anything a client can influence, and never
+	exposed — architecture.md §1.
+]]
+local rng = Random.new()
+local function nextRandom(): number
+	return rng:NextNumber()
+end
+
+local function fire(player: Player, remoteName: string, payload: any)
+	local remote = Remotes.folder():FindFirstChild(remoteName)
+	if remote and remote:IsA("RemoteEvent") then
+		remote:FireClient(player, payload)
+	end
+end
+
+local function replicate(player: Player)
+	local profile = DataService.get(player)
+	if profile then
+		fire(player, Remotes.TO_CLIENT.ProfileReplicated, profile)
+	end
+end
+
+-- Current server minute-of-hour, in UTC. architecture.md §5: never client time.
+local function serverMinute(): number
+	return tonumber(os.date("!*t").min) or 0
+end
+
+function GameService.handleRoll(player: Player): (boolean?, string?)
+	local profile = DataService.get(player)
+	if not profile then
+		return false, "profile not loaded"
+	end
+	if profile.gold < ROLL_COST then
+		return false, "not enough gold"
+	end
+	if Inventory.isFull(profile) then
+		-- Refuse before spending. Taking the gold and dropping the unit would be
+		-- the single most infuriating bug this game could ship.
+		return false, "inventory full"
+	end
+
+	profile.gold -= ROLL_COST
+
+	local luck = Upgrades.Upgrades.Luck.valueAtLevel(profile.upgrades.Luck)
+	local result = Roll.roll(luck, profile.pity, serverMinute(), nextRandom)
+	profile.pity = result.pity
+	profile.rollCount += 1
+	profile.stats.totalRolls += 1
+
+	local granted, uidOrError = Inventory.grant(profile, {
+		unitId = string.format("%s_%s", result.rarity, result.mutation),
+		rarity = result.rarity,
+		mutation = result.mutation,
+		level = 1,
+	})
+	if not granted then
+		-- Refund rather than swallow. Should be unreachable given the check above.
+		profile.gold += ROLL_COST
+		return false, uidOrError
+	end
+
+	fire(player, Remotes.TO_CLIENT.RollResult, {
+		uid = uidOrError,
+		rarity = result.rarity,
+		mutation = result.mutation,
+		fromPity = result.fromPity,
+		pity = result.pity,
+	})
+	replicate(player)
+	return true
+end
+
+function GameService.handleMerge(player: Player, payload: any): (boolean?, string?)
+	local profile = DataService.get(player)
+	if not profile then
+		return false, "profile not loaded"
+	end
+
+	-- Ownership: Guard validated the SHAPE of these uids, not that they are this
+	-- player's. Merge.canMerge resolves them against this profile only.
+	local ok, reason = Merge.merge(profile, payload.baseUid, payload.consumedUid)
+	if not ok then
+		return false, reason
+	end
+
+	replicate(player)
+	return true
+end
+
+function GameService.handlePlace(player: Player, payload: any): (boolean?, string?)
+	local profile = DataService.get(player)
+	if not profile then
+		return false, "profile not loaded"
+	end
+
+	local ok, reason = Grid.place(profile, payload.uid, payload.tileIndex)
+	if not ok then
+		return false, reason
+	end
+
+	replicate(player)
+	return true
+end
+
+function GameService.handleUpgrade(player: Player, payload: any): (boolean?, string?)
+	local profile = DataService.get(player)
+	if not profile then
+		return false, "profile not loaded"
+	end
+
+	local upgrade = Upgrades.Upgrades[payload.upgradeId]
+	local level = profile.upgrades[payload.upgradeId]
+	if level >= upgrade.maxLevel then
+		return false, "already at max level"
+	end
+
+	local cost = upgrade.costAtLevel(level)
+	if profile.gold < cost then
+		return false, string.format("costs %d gold", cost)
+	end
+
+	profile.gold -= cost
+	profile.upgrades[payload.upgradeId] = level + 1
+
+	-- A shrinking slot count cannot happen here, but pruning is cheap and keeps
+	-- the grid invariant true by construction rather than by argument.
+	Grid.pruneOutOfBounds(profile)
+	replicate(player)
+	return true
+end
+
+function GameService.handleWaveStart(player: Player): (boolean?, string?)
+	local profile = DataService.get(player)
+	if not profile then
+		return false, "profile not loaded"
+	end
+	if activeWaves[player] then
+		return false, "a wave is already running"
+	end
+	if Grid.placedCount(profile) == 0 then
+		return false, "place at least one unit first"
+	end
+
+	activeWaves[player] = Wave.begin(profile, profile.wave)
+	return true
+end
+
+local function tickWaves(dt: number)
+	for player, state in activeWaves do
+		local profile = DataService.get(player)
+		if not profile then
+			activeWaves[player] = nil
+			continue
+		end
+
+		Wave.tick(state, dt)
+
+		fire(player, Remotes.TO_CLIENT.WaveTick, {
+			wave = state.wave,
+			outcome = state.outcome,
+			elapsed = state.elapsed,
+			goldEarned = state.goldEarned,
+			enemiesLeft = Wave.livingCount(state.enemies),
+			enemyTotal = #state.enemies,
+			unitsLeft = Wave.livingCount(state.squad),
+		})
+
+		if state.outcome ~= "running" then
+			if state.outcome == "cleared" then
+				Wave.commit(profile, state)
+			end
+			activeWaves[player] = nil
+			replicate(player)
+		end
+	end
+end
+
+-- Announce the mutation rotation when the window changes, so clients can show
+-- what is currently rollable without polling.
+local function watchEventClock()
+	local last: string? = nil
+	while true do
+		local active = Mutations.activeEventMutation(serverMinute())
+		if active ~= last then
+			last = active
+			for _, player in Players:GetPlayers() do
+				fire(player, Remotes.TO_CLIENT.EventClockChanged, {
+					activeMutation = active,
+					minute = serverMinute(),
+				})
+			end
+		end
+		task.wait(5)
+	end
+end
+
+function GameService.start()
+	Players.PlayerAdded:Connect(function(player)
+		local profile = DataService.load(player)
+		if not profile then
+			-- Refusing beats overwriting. The player can rejoin; a clobbered save
+			-- cannot be recovered.
+			player:Kick("Could not load your save. Please rejoin in a moment.")
+			return
+		end
+		replicate(player)
+	end)
+
+	Players.PlayerRemoving:Connect(function(player)
+		activeWaves[player] = nil
+	end)
+
+	task.spawn(function()
+		while true do
+			tickWaves(TICK_RATE)
+			task.wait(TICK_RATE)
+		end
+	end)
+
+	task.spawn(watchEventClock)
+end
+
+GameService.ROLL_COST = ROLL_COST
+GameService.rarityOrder = Rarities.ASCENDING
+
+return GameService

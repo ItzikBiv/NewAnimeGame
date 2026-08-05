@@ -33,9 +33,9 @@ survives a rejoin.
 | 1.3 | Merge resolution — the strict three-way match | **done** |
 | 1.4 | Grid placement and slot limits | **done** |
 | 1.5 | Wave simulation — spawn, damage, gold | **done** |
-| 1.6 | DataService — load, migrate, session-lock, autosave | todo |
-| 1.7 | Remotes + rate limiting + validation middleware | **part** |
-| 1.8 | Client HUD, roll machine, inventory, grid UI | todo |
+| 1.6 | DataService — load, migrate, session-lock, autosave | **done** |
+| 1.7 | Remotes + rate limiting + validation middleware | **done** |
+| 1.8 | Client HUD, roll machine, inventory, grid UI | **done** |
 | 1.9 | In-Studio playtest and polish pass | todo *(owner)* |
 
 ---
@@ -115,9 +115,6 @@ Uid issuing, capacity enforcement against the Inventory Upgrade, ownership looku
 
 **Allowed:** `src/shared/Combat/Wave.luau`, `tests/combat-invariants.luau`
 
-The pure half is done. `CombatService` — the thin server wrapper owning timing and replication —
-lands with story 1.7, since it needs the remote layer to replicate through.
-
 Pure resolution of a wave tick, with the service owning only timing and replication.
 
 **Acceptance**
@@ -128,11 +125,17 @@ Pure resolution of a wave tick, with the service owning only timing and replicat
 
 ---
 
-### Story 1.6 — DataService
+### Story 1.6 — DataService ✅
 
-**Allowed:** `src/server/Services/DataService.luau`, `wally.toml`
+**Allowed:** `src/server/Services/DataService.luau`
 
-ProfileStore lands here — the story that first exercises it.
+> **Not verifiable outside Studio.** Touches `DataStoreService`. The pure parts it leans on —
+> `Schema.migrate/withDefaults/validate` — are exhaustively tested; this is the thin glue around them.
+>
+> Session locking is a minimal own implementation (jobId + heartbeat, stale after 120s) rather than
+> ProfileStore. ProfileStore remains the recommended upgrade, but a dependency this environment
+> cannot install or exercise is one it cannot verify, and shipping an unverified dependency is worse
+> than shipping a documented simpler one.
 
 **Acceptance**
 - On join, the system **shall** load, `migrate`, `withDefaults` and `validate` the profile.
@@ -141,14 +144,17 @@ ProfileStore lands here — the story that first exercises it.
 
 ---
 
-### Story 1.7 — Remotes and middleware ◐
+### Story 1.7 — Remotes and middleware ✅
 
 **Allowed:** `src/shared/Net/*`, `src/server/Middleware/*`, `src/server/Services/*`
 
-**Done:** the pure half — `Net/RateLimit.luau` (token buckets, time injected) and `Net/Validate.luau`
-(per-remote payload validation), both fully tested.
-**Remaining:** the RemoteEvent wiring and the services behind it, which are Roblox-runtime glue and
-cannot be verified outside Studio.
+The pure half — `RateLimit` and `Validate` — is fully tested. The wiring (`Remotes`, `Guard`,
+`GameService`) is Roblox-runtime glue and **not verifiable outside Studio**.
+
+`Guard` is the only path from a client to a service: rate limit first (cheapest check, sheds load
+before doing work), then validation, then ownership inside the service where the profile lives.
+`Remotes.assertCoverage` runs at boot, so a remote missing a limit or a validator stops the server
+rather than leaking into production.
 
 **Acceptance**
 - Every `C→S` remote **shall** pass rate limiting and argument validation before reaching a service.
@@ -158,9 +164,11 @@ cannot be verified outside Studio.
 
 ---
 
-### Story 1.8 — Client
+### Story 1.8 — Client ✅
 
 **Allowed:** `src/client/**`
+
+> **Not verifiable outside Studio** — this is exactly what story 1.9 exists to judge.
 
 **Acceptance**
 - The roll animation **shall** play after the server result arrives, never predicting it.

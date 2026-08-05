@@ -6,15 +6,57 @@
 # there at all and every lint mistake costs a CI round trip.
 #
 # This std bases off selene's built-in `luau` — so all Luau-specific lints, like
-# manual_table_clone, still fire — and declares only the Roblox globals this
-# project actually touches. It is NOT a substitute for the real Roblox std: it
-# will not catch a misspelled Roblox API. Treat it as a fast pre-push check.
+# manual_table_clone, still fire — and declares the Roblox globals this project
+# actually touches. It is NOT a substitute for the real Roblox std: it will not
+# catch a misspelled Roblox API or a wrong argument type. Treat it as a fast
+# pre-push check, and add a global here when a new one is genuinely used.
 base: luau
 
 globals:
+  # Core
   game:
     any: true
   script:
     any: true
+  workspace:
+    any: true
+  warn:
+    args:
+      - type: any
+        required: false
+  task:
+    any: true
+  Instance:
+    any: true
+  Enum:
+    any: true
+  Random:
+    any: true
+
+  # Data types
   Color3:
+    any: true
+  UDim:
+    any: true
+  UDim2:
+    any: true
+  Vector2:
+    any: true
+  Vector3:
+    any: true
+  CFrame:
+    any: true
+  TweenInfo:
+    any: true
+  NumberRange:
+    any: true
+  NumberSequence:
+    any: true
+  ColorSequence:
+    any: true
+  BrickColor:
+    any: true
+  Rect:
+    any: true
+  Ray:
     any: true

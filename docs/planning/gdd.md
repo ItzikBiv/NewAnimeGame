@@ -324,5 +324,12 @@ progress survives a rejoin.
 3. **[?] Skills.** Charge counts and per-skill `Auto` toggles are visible; no skill list captured.
 4. **[?] Evolution Machine recipes.** Inputs guessed, outputs unknown.
 5. **[?] Checkpoints.** Wiki-only. Not implementing on that evidence.
-6. **[OURS, needs a call] Boss waves** (§5.1) — our invention. Keep or drop?
-7. **[OURS, needs a call] Monetisation** — build the systems, stub the Robux hooks?
+## Decided
+
+- **Boss waves — KEPT.** Owner's call, 2026-08-04. Every 10th wave, 8x HP, 5x gold. Ours, not the
+  source game's, and staying.
+- **Monetisation — systems built, Robux hooks stubbed.** Owner deferred to preference. The shop,
+  bundles and pass surfaces get designed and built as game systems; no `MarketplaceService` calls
+  until the owner decides to switch them on.
+- **Wave pacing — kept as measured.** Four Commons clear waves 1-9 comfortably, wave 15 in 14.8s,
+  and stall around wave 40. Meets the first-session target with room; not made harsher.
