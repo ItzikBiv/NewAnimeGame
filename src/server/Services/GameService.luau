@@ -237,17 +237,32 @@ local function watchEventClock()
 	end
 end
 
+local function onPlayerAdded(player: Player)
+	local profile = DataService.load(player)
+	if not profile then
+		-- Refusing beats overwriting. The player can rejoin; a clobbered save
+		-- cannot be recovered.
+		player:Kick("Could not load your save. Please rejoin in a moment.")
+		return
+	end
+	replicate(player)
+end
+
 function GameService.start()
-	Players.PlayerAdded:Connect(function(player)
-		local profile = DataService.load(player)
-		if not profile then
-			-- Refusing beats overwriting. The player can rejoin; a clobbered save
-			-- cannot be recovered.
-			player:Kick("Could not load your save. Please rejoin in a moment.")
-			return
-		end
-		replicate(player)
-	end)
+	Players.PlayerAdded:Connect(onPlayerAdded)
+
+	--[[
+		PlayerAdded only fires for players who join AFTER the connection exists.
+		In Studio Play Solo the local player is already in the game before the
+		server finishes booting, so without this sweep their profile is never
+		loaded and the client waits forever on a replication that never comes.
+
+		This is not Studio-only paranoia: on a live server the same race can lose
+		the first player to join a fresh server instance.
+	]]
+	for _, player in Players:GetPlayers() do
+		task.spawn(onPlayerAdded, player)
+	end
 
 	Players.PlayerRemoving:Connect(function(player)
 		activeWaves[player] = nil

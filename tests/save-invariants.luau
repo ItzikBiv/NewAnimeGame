@@ -37,7 +37,7 @@ local fresh = Schema.defaultProfile()
 local okFresh, reason = Schema.validate(fresh)
 expect("default profile validates", okFresh, reason or "no issues")
 check("starts on wave 1", fresh.wave, 1)
-check("starts with 0 gold", fresh.gold, 0)
+check("starts with the starter grant", fresh.gold, Schema.STARTING_GOLD)
 check("stamped with the current schema version", fresh.schemaVersion, Schema.CURRENT_VERSION)
 
 print("\nDefaults are derived from config, not hand-copied")
@@ -67,6 +67,20 @@ for _ in pairs(fresh.pity) do
 end
 check("a persisted pity counter per in-game counter", nPity, 3)
 expect("pity is saved, not in-memory only", fresh.pity.Legendary ~= nil, "survives a rejoin")
+
+print("\nThe starter grant makes a cold start playable")
+-- Without it the game deadlocks: rolls cost gold, gold comes from waves, and a
+-- wave needs a placed unit. A new player would have no way to earn their first coin.
+expect(
+	"a fresh profile can afford at least one roll",
+	Schema.STARTING_GOLD >= 100,
+	string.format("%d gold", Schema.STARTING_GOLD)
+)
+expect(
+	"and enough to fill the four starting slots",
+	Schema.STARTING_GOLD >= 4 * 100,
+	string.format("%d rolls' worth", Schema.STARTING_GOLD // 100)
+)
 
 print("\nA fresh profile matches the confirmed starting state")
 -- [C] Owner: "you start with 4 slots ... you can get more in upgrades till 12".

@@ -18,6 +18,19 @@ local Upgrades = require(script.Parent.Parent.Config.Upgrades)
 
 local CURRENT_VERSION = 1
 
+--[[
+	[OURS] Gold a brand-new profile starts with.
+
+	Without this the game is unplayable from a cold start: a roll costs gold,
+	gold comes from clearing a wave, and a wave needs at least one placed unit —
+	so a new player has no way to earn their first coin. The source game must
+	grant something equivalent; we cannot see what, so this is our call.
+
+	500 buys five rolls, which is enough to fill the four starting slots and
+	still have one pull spare. Adjust freely — it is a single number.
+]]
+local STARTING_GOLD = 500
+
 export type StoredUnit = {
 	unitId: string,
 	rarity: string,
@@ -61,7 +74,7 @@ local function defaultProfile(): Profile
 	return {
 		schemaVersion = CURRENT_VERSION,
 		wave = 1,
-		gold = 0,
+		gold = STARTING_GOLD,
 		rollCount = 0,
 		-- Server-issued unit ids. Units are keyed by uid, never by index — merges
 		-- and trades reorder the collection constantly, and index-keyed references
@@ -184,6 +197,7 @@ end
 
 return {
 	CURRENT_VERSION = CURRENT_VERSION,
+	STARTING_GOLD = STARTING_GOLD,
 	defaultProfile = defaultProfile,
 	migrations = migrations,
 	migrate = migrate,
