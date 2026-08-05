@@ -12,7 +12,20 @@
 	and contained rather than silent and total.
 ]]
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+--[[
+	NO AVATAR. This is an idle auto-battler played from a fixed camera looking at
+	your own board — there is nothing to walk to and nothing to walk on. Workspace
+	ships with no baseplate, and the arena is built on the client, so a character
+	that spawned here would drop straight through the world into the void.
+
+	Turning the character off is therefore not a cosmetic choice, it removes a
+	guaranteed bug. If we later want the source game's walk-around base, this line
+	comes out AND the floor has to move to the server first — in that order.
+]]
+Players.CharacterAutoLoads = false
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared.Net.Remotes)

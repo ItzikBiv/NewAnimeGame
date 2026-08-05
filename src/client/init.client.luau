@@ -29,6 +29,8 @@ local Upgrades = require(Shared.Config.Upgrades)
 local Merge = require(Shared.Inventory.Merge)
 local Remotes = require(Shared.Net.Remotes)
 
+local Arena = require(script.Parent.Arena)
+
 local player = Players.LocalPlayer
 local gui = Instance.new("ScreenGui")
 gui.Name = "RollAnimeToFight"
@@ -269,6 +271,20 @@ make("UIGridLayout", {
 	CellPadding = UDim2.new(0, 6, 0, 6),
 })
 
+-- Which tile a uid sits on, or nil if it is on the bench. Used to highlight the
+-- selected unit's tile in the arena.
+local function tileHolding(uid: string): number?
+	if not profile then
+		return nil
+	end
+	for tile, occupant in pairs(profile.grid) do
+		if occupant == uid then
+			return tonumber(tile)
+		end
+	end
+	return nil
+end
+
 local function unitCaption(unit: any): string
 	local prefix = unit.mutation ~= "Normal" and (unit.mutation .. " ") or ""
 	return string.format("%s%s  Lv%d", prefix, unit.rarity, unit.level)
@@ -278,6 +294,13 @@ local function redraw()
 	if not profile then
 		return
 	end
+
+	--[[
+		The 3D board is redrawn from the same call and the same profile as the 2D
+		panels. Giving it its own refresh path is how the two views drift apart.
+	]]
+	Arena.setSelectedTile(if selectedUid then tileHolding(selectedUid) else nil)
+	Arena.renderProfile(profile)
 
 	goldLabel.Text = string.format("Gold: %d", profile.gold)
 	if not waveRunning then
@@ -420,6 +443,13 @@ end)
 
 Remotes.get(Remotes.TO_CLIENT.WaveTick).OnClientEvent:Connect(function(tick)
 	setWaveRunning(tick.outcome == "running")
+	Arena.renderWave(tick)
+	if tick.outcome ~= "running" then
+		Arena.clearWave()
+		if tick.outcome == "cleared" then
+			Arena.flashCleared()
+		end
+	end
 	if tick.outcome == "running" then
 		waveLabel.Text = string.format(
 			"Wave %d — %d/%d enemies, %d units",
@@ -449,6 +479,46 @@ Remotes.get(Remotes.TO_CLIENT.EventClockChanged).OnClientEvent:Connect(function(
 	else
 		clockLabel.Text = "Mutation window: none"
 	end
+end)
+
+--=============================================================================
+-- The 3D board
+--=============================================================================
+
+Arena.build()
+
+--[[
+	Clicking a tile in the world does exactly what clicking its row in the 2D grid
+	does — same branches, same remote. The two are separate INPUTS to one action, not
+	two implementations of it, which is why the rules live here and not in Arena.
+]]
+Arena.setTileClickHandler(function(tileIndex)
+	if not profile then
+		return
+	end
+
+	local slots = Upgrades.Upgrades.Slot.valueAtLevel(profile.upgrades.Slot)
+	if tileIndex > slots then
+		say(string.format("Slot %d is locked — buy the Slot upgrade to unlock it.", tileIndex))
+		return
+	end
+
+	local occupant = profile.grid[tostring(tileIndex)]
+	if not selectedUid then
+		if occupant then
+			selectedUid = occupant
+			say("Holding " .. unitCaption(profile.inventory[occupant]) .. " — tap a slot.", true)
+			redraw()
+		else
+			say("Select a unit from your inventory first.")
+		end
+		return
+	end
+
+	Remotes.get(Remotes.TO_SERVER.RequestPlace)
+		:FireServer({ uid = selectedUid, tileIndex = tileIndex })
+	selectedUid = nil
+	redraw()
 end)
 
 -- Loading state until the first replication lands.
