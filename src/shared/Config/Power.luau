@@ -21,11 +21,23 @@
 
 local Rarities = require(script.Parent.Rarities)
 local Mutations = require(script.Parent.Mutations)
+local Units = require(script.Parent.Units)
 
 type RarityId = Rarities.RarityId
 type MutationId = Mutations.MutationId
 
--- [OURS] Power multiplier by rarity, Common = 1.0.
+--[[
+	[OURS] Power multiplier by rarity, Common = 1.0.
+
+	THIS IS NO LONGER HOW A REAL UNIT IS STATTED — see `unitStats` below and
+	`Units.luau`. Real units carry authored Attack/Defense/Health/Speed. This ladder
+	survives for two narrower jobs: it is the yardstick `tiersGainedByMutation` uses
+	to ask "how much is a mutation worth in band terms", and it stats a unit that has
+	no roster entry at all (synthetic units in balance tests).
+
+	Limited tracks God: it is a band you buy, not a band you out-roll, so it must not
+	be the strongest thing in the game by construction.
+]]
 local RarityPower: { [RarityId]: number } = {
 	Common = 1.0,
 	Rare = 2.2,
@@ -34,6 +46,7 @@ local RarityPower: { [RarityId]: number } = {
 	Mythic = 28.0,
 	Secret = 65.0,
 	God = 150.0,
+	Limited = 150.0,
 }
 
 --[[
@@ -150,8 +163,52 @@ local function timeToClear(totalHP: number, squadDps: number): number
 	return totalHP / squadDps
 end
 
+--[[
+	A ROSTER unit's live stats: its authored block, under a mutation, at a level.
+
+	This is the real path. `power`/`health` above are the fallback for units that
+	have no roster entry.
+
+	    attack  = base.attack  * mutation.damage * level
+	    health  = base.health  * mutation.health * level
+	    speed   = base.speed                                  <- mutation-independent
+	    defense = base.defense                                <- near-flat, see below
+
+	[C] SPEED IS UNTOUCHED BY MUTATION. The three Ulquiopta captures all read 2.5.
+
+	[I] DEFENSE IS LEFT ALONE TOO. Across those same three captures it moved 1.25 ->
+	    1.28 -> 1.29 — real but tiny, and two points cannot distinguish a x1.02/x1.035
+	    scaling from a flat +0.03/+0.04. Modelling it as flat is the honest choice
+	    until there is a third point; the alternative is inventing a curve and then
+	    balancing against it as though it were known.
+]]
+local function unitStats(
+	unitId: string,
+	mutation: MutationId,
+	level: number,
+	traitBonus: number?,
+	traitHealthBonus: number?
+): Units.Stats?
+	local unit = Units.get(unitId)
+	if not unit then
+		return nil
+	end
+
+	local base = Units.baseStats(unit)
+	local m = Mutations.Mutations[mutation]
+	local lvl = levelMultiplier(level)
+
+	return {
+		attack = base.attack * m.damageMultiplier * lvl * (1 + (traitBonus or 0)),
+		defense = base.defense,
+		health = base.health * m.healthMultiplier * lvl * (1 + (traitHealthBonus or 0)),
+		speed = base.speed,
+	}
+end
+
 return {
 	RarityPower = RarityPower,
+	unitStats = unitStats,
 	LEVEL_MULTIPLIER = LEVEL_MULTIPLIER,
 	DEFENSE_CONSTANT = DEFENSE_CONSTANT,
 	BASE_ATTACK = BASE_ATTACK,

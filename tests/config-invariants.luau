@@ -87,7 +87,9 @@ end
 for _ in pairs(Traits.Traits) do
 	nTra += 1
 end
-check("rarity tiers (Common..God, NO Uncommon)", nRar, 7)
+-- [C] Eight bands: Common..God plus Limited, which the Index lists above God.
+-- Still NO Uncommon — several public wikis claim one and the Index disproves it.
+check("rarity bands (Common..God + Limited, NO Uncommon)", nRar, 8)
 check("mutations (7 from Index tabs + Slayer)", nMut, 8)
 check("traits (17 from the full dev FAQ)", nTra, 17)
 check("mutation event cycle, seconds", Mutations.MUTATION_EVENT_INTERVAL, 900)
@@ -97,9 +99,22 @@ local seenOrder = {}
 for id, r in pairs(Rarities.Rarities) do
 	assert(not seenOrder[r.order], "duplicate rarity order on " .. id)
 	seenOrder[r.order] = true
-	assert(r.essenceItem and #r.essenceItem > 0, "missing essenceItem on " .. id)
+	if Rarities.isRollable(id) then
+		assert(r.essenceItem and #r.essenceItem > 0, "missing essenceItem on " .. id)
+	end
 end
-ok("7 distinct orders, all essence items present")
+ok("8 distinct orders, every rollable band has an essence item")
+
+-- Limited has no Essence ON PURPOSE. Essence is what the Clone Machine consumes, so
+-- an Essence for a shop-only band would be a way to duplicate event units — the
+-- exact promise the band exists to keep.
+expect(
+	"Limited has no Essence, so it cannot be cloned",
+	Rarities.Rarities.Limited.essenceItem == nil,
+	"shop-only means shop-only"
+)
+expect("and Limited is not rollable", not Rarities.isRollable("Limited"))
+expect("while God still is", Rarities.isRollable("God"))
 
 -- [C] Resolved by two agreeing signals: pity counter length and Robux essence price.
 local byOrder = {}
@@ -247,25 +262,63 @@ for _, minute in { 0, 15, 30, 45, 7, 22, 38, 51 } do
 end
 ok("4 mutations rollable at any moment")
 
-print("\nMutation power ladder rises as availability gets scarcer")
-local muts = {}
+print("\nMutation power ladder rises with rarity WITHIN an availability class")
+--[[
+	This used to assert one global ladder: rarer mutation => stronger mutation, across
+	the whole table. The measurements broke it, and the break is the point.
+
+	Hollow is event-gated (rollable 15 minutes an hour) yet measures around x1.25 —
+	WEAKER than Gold, which is available all day at x1.5. So scarcity in this game
+	does not buy power. Event mutations are chased for scarcity, VFX and trade value.
+
+	The invariant that survives is the one that was actually doing the work: inside a
+	single availability class, rarer must still mean stronger. Otherwise there would
+	be a strictly dominated mutation nobody would ever want.
+]]
+local byClass: { [string]: { any } } = { always = {}, event = {}, admin = {} }
 for _, m in pairs(Mutations.Mutations) do
-	table.insert(muts, m)
+	table.insert(byClass[m.availability], m)
 end
-table.sort(muts, function(a, b)
-	return a.weight > b.weight
-end)
-for i = 1, #muts - 1 do
-	assert(
-		muts[i].damageMultiplier <= muts[i + 1].damageMultiplier,
-		string.format("mutation %s is rarer than %s but weaker", muts[i + 1].id, muts[i].id)
-	)
+
+for class, group in pairs(byClass) do
+	table.sort(group, function(a, b)
+		return a.weight > b.weight
+	end)
+	for i = 1, #group - 1 do
+		assert(
+			group[i].damageMultiplier <= group[i + 1].damageMultiplier,
+			string.format(
+				"%s mutation %s is rarer than %s but weaker",
+				class,
+				group[i + 1].id,
+				group[i].id
+			)
+		)
+	end
 end
+expect("no dominated mutation inside always / event / admin", true, "3 always, 4 event, 1 admin")
+
 check("Normal is the 1.0x baseline", Mutations.Mutations.Normal.damageMultiplier, 1.0)
+
+-- The one genuinely global claim left: nothing outranks the admin-only mutation.
+local strongest = Mutations.Mutations.Normal
+for _, m in pairs(Mutations.Mutations) do
+	if m.damageMultiplier > strongest.damageMultiplier then
+		strongest = m
+	end
+end
+expect("Astronaut tops the whole table", strongest.id == "Astronaut", "admin-only, never farmable")
+
+-- And the correction itself, asserted so it cannot silently regress: an event
+-- mutation is NOT automatically stronger than an always-available one.
 expect(
-	"Astronaut tops the ladder",
-	muts[#muts].id == "Astronaut",
-	"rarest mutation is the strongest"
+	"Gold (always) beats Hollow (event) — scarcity does not buy power",
+	Mutations.Mutations.Gold.damageMultiplier > Mutations.Mutations.Hollow.damageMultiplier,
+	string.format(
+		"x%.2f vs x%.2f",
+		Mutations.Mutations.Gold.damageMultiplier,
+		Mutations.Mutations.Hollow.damageMultiplier
+	)
 )
 
 print("\nTrait tiers are the trait ladder, NOT the unit rarity ladder")

@@ -36,37 +36,46 @@ local function expect(label, condition, detail)
 	end
 end
 
-print("PILLAR 1 — a mutation must be able to buy at least one rarity tier")
--- If this fails, rarity dominates and the two-axis pull has collapsed into an
--- ordinary rarity ladder. This is the single most important test in the project.
-expect(
-	"Destroyer Common out-powers a clean Epic",
-	Power.power("Common", "Destroyer", 1) > Power.RarityPower.Epic,
-	string.format("%.2f vs %.2f", Power.power("Common", "Destroyer", 1), Power.RarityPower.Epic)
-)
-expect(
-	"Diamond Rare out-powers a clean Epic",
-	Power.power("Rare", "Diamond", 1) > Power.RarityPower.Epic,
-	string.format("%.2f vs %.2f", Power.power("Rare", "Diamond", 1), Power.RarityPower.Epic)
-)
-for _, rarity in { "Common", "Rare", "Epic", "Legendary" } do
-	local gained = Power.tiersGainedByMutation(rarity, "Destroyer")
-	expect(
-		string.format("Destroyer %-10s gains a tier", rarity),
-		gained >= 1,
-		string.format("%d tier(s)", gained)
-	)
-end
+print("PILLAR 1 — a mutation is worth about HALF a band, and never more than one")
+--[[
+	REWRITTEN AGAINST MEASUREMENT. This test used to assert that a mutation buys a
+	whole rarity tier outright — a Destroyer Common beating a clean Epic. The owner's
+	Index screenshots disproved it.
 
-print("\nPILLAR 1 — but mutations must NOT trivialise the ladder")
--- A mutation buying 3+ tiers would make rarity meaningless in the other direction.
+	The same unit (Ulquiopta, Secret, Lv. 1) was captured under Normal, Gold and
+	Diamond: 7500 / 11250 / 16875 attack. Diamond, the strongest freely-available
+	mutation, is x2.25. A band step is about x2.4. So in the source game a mutation
+	does NOT buy a band — it buys most of one, and rarity stays the dominant axis.
+
+	That is a design correction, not a defeat. Event mutations are scarcity, VFX and
+	trade value; they are not a power ladder. A 15-minute window should not gate raw
+	power against players who happen to be asleep at :45.
+]]
+local BAND_STEP = Power.RarityPower.Rare / Power.RarityPower.Common
+
+expect(
+	"Diamond is measured, not chosen",
+	math.abs(Mutations.Mutations.Diamond.damageMultiplier - 2.25) < 1e-9,
+	"from the Ulquiopta Normal/Gold/Diamond capture"
+)
+expect(
+	"and it lands just under a full band step",
+	Mutations.Mutations.Diamond.damageMultiplier < BAND_STEP * 1.1,
+	string.format(
+		"x%.2f vs a x%.2f band step",
+		Mutations.Mutations.Diamond.damageMultiplier,
+		BAND_STEP
+	)
+)
+
+-- No mutation may buy TWO bands. That would make rarity meaningless.
 for _, rarity in { "Common", "Rare", "Epic", "Legendary", "Mythic" } do
 	for mutationId in pairs(Mutations.Mutations) do
 		local gained = Power.tiersGainedByMutation(rarity, mutationId)
 		assert(
-			gained <= 2,
+			gained <= 1,
 			string.format(
-				"%s %s jumps %d tiers — mutations are too strong",
+				"%s %s jumps %d bands — mutations are too strong",
 				mutationId,
 				rarity,
 				gained
@@ -75,7 +84,7 @@ for _, rarity in { "Common", "Rare", "Epic", "Legendary", "Mythic" } do
 	end
 end
 expect(
-	"no mutation jumps more than 2 tiers on any rarity",
+	"no mutation jumps more than one band on any rarity",
 	true,
 	"checked 8 mutations x 5 rarities"
 )
@@ -83,6 +92,39 @@ expect(
 	"a clean Legendary still beats a Gold Epic",
 	Power.RarityPower.Legendary > Power.power("Epic", "Gold", 1),
 	string.format("%.2f vs %.2f", Power.RarityPower.Legendary, Power.power("Epic", "Gold", 1))
+)
+
+-- The other side of the pillar: "not a whole band" must not slide into "pointless".
+-- Every mutation has to be a visible upgrade, and the ceiling has to reach a band on
+-- something, or the whole second axis is decoration.
+for mutationId, mutation in pairs(Mutations.Mutations) do
+	if mutationId ~= "Normal" then
+		assert(
+			mutation.damageMultiplier >= 1.2,
+			string.format(
+				"%s is only x%.2f — not worth chasing",
+				mutationId,
+				mutation.damageMultiplier
+			)
+		)
+		assert(
+			mutation.healthMultiplier >= 1.1,
+			string.format("%s adds almost no health", mutationId)
+		)
+	end
+end
+expect("every mutation is a real upgrade", true, "at least x1.2 damage, x1.1 health")
+
+local bestReach = 0
+for _, rarity in { "Common", "Rare", "Epic", "Legendary", "Mythic" } do
+	for mutationId in pairs(Mutations.Mutations) do
+		bestReach = math.max(bestReach, Power.tiersGainedByMutation(rarity, mutationId))
+	end
+end
+expect(
+	"and the top of the ladder still buys a band somewhere",
+	bestReach == 1,
+	string.format("best reach is %d band", bestReach)
 )
 
 print("\nMerging trades width for depth — it must not be strictly correct")
@@ -289,10 +331,19 @@ expect(
 	oneLegendary > startingDps,
 	string.format("%.0f vs %.0f dps", oneLegendary, startingDps)
 )
+-- The label and the assertion used to disagree here: it said "over a clean Common"
+-- and compared against a clean EPIC. It only ever passed because the old mutation
+-- ladder ran to x6.5. Now it asserts what it always claimed to.
 local mutatedCommon = Power.dps("Common", "Destroyer", 1)
+local cleanCommon = Power.dps("Common", "Normal", 1)
 expect(
 	"a Destroyer Common is a genuine upgrade over a clean Common",
-	mutatedCommon > Power.dps("Epic", "Normal", 1),
+	mutatedCommon > cleanCommon * 1.5,
+	string.format("%.0f vs %.0f dps", mutatedCommon, cleanCommon)
+)
+expect(
+	"but it does NOT catch a clean Epic — rarity is the dominant axis",
+	mutatedCommon < Power.dps("Epic", "Normal", 1),
 	string.format("%.0f vs %.0f dps (clean Epic)", mutatedCommon, Power.dps("Epic", "Normal", 1))
 )
 

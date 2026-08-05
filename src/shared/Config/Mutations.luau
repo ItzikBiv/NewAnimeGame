@@ -28,10 +28,43 @@
 	flattened, the clone reproduces the shell and loses the game. Multipliers here
 	must stay large enough that chasing mutations outranks chasing rarity.
 
-	[?] MULTIPLIERS ARE UNKNOWN. Not one mutation multiplier is visible in any
-	    screenshot or FAQ answer. The values below are OUR OWN ladder, not a clone
-	    of theirs. Public (unverified) claims put the top mutations around 5x-6.5x
-	    damage, which is the ceiling this ladder is shaped toward.
+	[C] GOLD AND DIAMOND ARE MEASURED. The owner captured the same unit
+	    (Ulquiopta, Secret, Lv. 1) under all three always-available mutations, which
+	    is a controlled experiment: only the mutation varies.
+
+	        Normal    7500 atk   7500 hp   2.5 spd
+	        Gold     11250 atk   9375 hp   2.5 spd    -> x1.50 dmg, x1.25 hp
+	        Diamond  16875 atk  11250 hp   2.5 spd    -> x2.25 dmg, x1.50 hp
+
+	    [C] MUTATIONS DO NOT TOUCH SPEED. All three rows read 2.5.
+	    [D] Diamond's damage multiplier is exactly Gold's squared.
+
+	[I] HOLLOW IS SMALL TOO, and that was a surprise. Two independent cross-unit
+	    comparisons agree:
+
+	        Mika (Rare, Hollow) 198 atk / 1395 hp   vs  Goke (Rare, Normal) 157.5 / 1200
+	          -> x1.26 dmg, x1.16 hp
+	        Goji (Legendary, Hollow) 1125 atk       vs  the Legendary attack baseline
+	          -> x1.25 dmg
+
+	    Dividing Mika's block by x1.25/x1.15 lands on 158 atk / 1213 hp, within 1% of
+	    Goke's 157.5 / 1200. Two separate stats agreeing that closely is not a
+	    coincidence, so the estimate is good even though it is cross-unit.
+
+	    THE CONSEQUENCE IS A DESIGN CORRECTION. Our ladder previously ran to x6.5,
+	    on the theory that a mutation should buy a rarity band outright. The measured
+	    numbers do not support that: at x2.25, a Diamond Common (65 -> 146 atk) still
+	    loses to a clean Rare (157.5). In the source game, rarity dominates and a
+	    mutation is worth roughly HALF A BAND.
+
+	    So event mutations are not a power ladder. They are scarcity, VFX and trade
+	    value — you chase Hollow because it is only rollable for 15 minutes an hour,
+	    not because it doubles your damage. That is the better design anyway: a
+	    15-minute window should not gate raw power for players who are asleep.
+
+	[OURS] Everything above Diamond is still ours. The two measured points anchor the
+	    bottom of the ladder; Slayer, Demon, Destroyer and Astronaut extend it on the
+	    same modest scale rather than the old steep one.
 ]]
 
 export type MutationId =
@@ -81,8 +114,8 @@ local Mutations: { [MutationId]: Mutation } = {
 	Gold = {
 		id = "Gold",
 		displayName = "Gold",
-		damageMultiplier = 1.75,
-		healthMultiplier = 1.5,
+		damageMultiplier = 1.5,
+		healthMultiplier = 1.25,
 		weight = 120,
 		availability = "always",
 		color = Color3.fromRGB(255, 200, 50),
@@ -90,8 +123,8 @@ local Mutations: { [MutationId]: Mutation } = {
 	Diamond = {
 		id = "Diamond",
 		displayName = "Diamond",
-		damageMultiplier = 2.5,
-		healthMultiplier = 2.0,
+		damageMultiplier = 2.25,
+		healthMultiplier = 1.5,
 		weight = 45,
 		availability = "always",
 		color = Color3.fromRGB(120, 230, 255),
@@ -101,9 +134,9 @@ local Mutations: { [MutationId]: Mutation } = {
 	Demon = {
 		id = "Demon",
 		displayName = "Demon",
-		damageMultiplier = 3.25,
-		healthMultiplier = 2.5,
-		weight = 20,
+		damageMultiplier = 1.75,
+		healthMultiplier = 1.35,
+		weight = 30,
 		availability = "event",
 		eventMinute = 15,
 		color = Color3.fromRGB(200, 40, 40),
@@ -111,9 +144,9 @@ local Mutations: { [MutationId]: Mutation } = {
 	Slayer = {
 		id = "Slayer",
 		displayName = "Slayer",
-		damageMultiplier = 4.0,
-		healthMultiplier = 3.0,
-		weight = 14,
+		damageMultiplier = 1.35,
+		healthMultiplier = 1.2,
+		weight = 45,
 		availability = "event",
 		eventMinute = 0,
 		color = Color3.fromRGB(60, 200, 130),
@@ -121,9 +154,9 @@ local Mutations: { [MutationId]: Mutation } = {
 	Hollow = {
 		id = "Hollow",
 		displayName = "Hollow",
-		damageMultiplier = 4.75,
-		healthMultiplier = 3.5,
-		weight = 9,
+		damageMultiplier = 1.25,
+		healthMultiplier = 1.15,
+		weight = 60,
 		availability = "event",
 		eventMinute = 45,
 		color = Color3.fromRGB(240, 240, 240),
@@ -131,9 +164,9 @@ local Mutations: { [MutationId]: Mutation } = {
 	Destroyer = {
 		id = "Destroyer",
 		displayName = "Destroyer",
-		damageMultiplier = 5.5,
-		healthMultiplier = 4.0,
-		weight = 5,
+		damageMultiplier = 2.0,
+		healthMultiplier = 1.4,
+		weight = 18,
 		availability = "event",
 		eventMinute = 30,
 		color = Color3.fromRGB(255, 90, 0),
@@ -146,8 +179,8 @@ local Mutations: { [MutationId]: Mutation } = {
 	Astronaut = {
 		id = "Astronaut",
 		displayName = "Astronaut",
-		damageMultiplier = 6.5,
-		healthMultiplier = 4.5,
+		damageMultiplier = 3.0,
+		healthMultiplier = 2.0,
 		weight = 1,
 		availability = "admin",
 		color = Color3.fromRGB(90, 120, 255),

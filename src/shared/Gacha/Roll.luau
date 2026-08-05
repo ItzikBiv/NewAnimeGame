@@ -51,12 +51,22 @@ local function newPity(): PityState
 	return table.clone(Rarities.PityCaps)
 end
 
--- Ascending rarity order (Common first), computed once from the config's `order`
--- field so this never drifts from Rarities.luau.
+--[[
+	Ascending rarity order (Common first), computed once from the config's `order`
+	field so this never drifts from Rarities.luau.
+
+	NON-ROLLABLE BANDS ARE EXCLUDED. `Limited` is a rarity but not an outcome: it has
+	no base chance, no luck exponent and no pity counter, so walking it here reads a
+	nil chance and crashes the roll. It is filtered at the source rather than guarded
+	at each use, because there are four separate walks over ORDER below and a guard
+	that has to be remembered in four places is a guard that will be forgotten in one.
+]]
 local ORDER: { RarityId } = {}
 do
 	for id in pairs(Rarities.Rarities) do
-		table.insert(ORDER, id)
+		if Rarities.isRollable(id) then
+			table.insert(ORDER, id)
+		end
 	end
 	table.sort(ORDER, function(a, b)
 		return Rarities.Rarities[a].order < Rarities.Rarities[b].order

@@ -17,9 +17,26 @@
 	    So the ladder is Common < Rare < Epic < Legendary < Mythic < Secret < God.
 	    God carries NO pity counter — only three are shown on the Roll Machine, and
 	    they belong to Legendary, Mythic and Secret.
+
+	[C] EIGHT BANDS — corrected. The in-game Index lists units in the order
+	    Common, Rare, Epic, Legendary, Mythic, Secret, God, LIMITED. `Limited` is a
+	    band printed on the card exactly the way `God` is, not a flag on some other
+	    rarity, and it sits above God.
+
+	    It is still never in the roll pool — see `UnitSource` at the bottom of this
+	    file. A Limited unit comes from the Shop or an event and nowhere else, so the
+	    band has no base chance, no luck exponent and no pity counter.
 ]]
 
-export type RarityId = "Common" | "Rare" | "Epic" | "Legendary" | "Mythic" | "Secret" | "God"
+export type RarityId =
+	"Common"
+	| "Rare"
+	| "Epic"
+	| "Legendary"
+	| "Mythic"
+	| "Secret"
+	| "God"
+	| "Limited"
 
 export type Rarity = {
 	id: RarityId,
@@ -29,7 +46,8 @@ export type Rarity = {
 	-- UI tint. Placeholder values; replace once we have art direction.
 	color: Color3,
 	-- Matching Essence item consumed by the Clone Machine. [C]
-	essenceItem: string,
+	-- nil for Limited, which has no Essence because it cannot be cloned.
+	essenceItem: string?,
 }
 
 local Rarities: { [RarityId]: Rarity } = {
@@ -81,6 +99,21 @@ local Rarities: { [RarityId]: Rarity } = {
 		order = 7,
 		color = Color3.fromRGB(255, 60, 60),
 		essenceItem = "GodEssence",
+	},
+	--[[
+		[C] Limited. Above God in the Index, and NEVER rollable.
+
+		It has no Essence. Every other band has exactly one Essence item, which is
+		what the Clone Machine consumes — and a band you cannot roll is a band you
+		must not be able to duplicate either, or the shop-only promise is void the
+		first time someone clones an event unit.
+	]]
+	Limited = {
+		id = "Limited",
+		displayName = "Limited",
+		order = 8,
+		color = Color3.fromRGB(0, 230, 200),
+		essenceItem = nil,
 	},
 }
 
@@ -153,8 +186,20 @@ local LuckExponent: { [RarityId]: number } = {
 local MIN_COMMON_CHANCE = 0.01
 local MAX_TIER_RATIO = 0.6
 
--- Rarest last, Common excluded — it is the remainder tier.
+--[[
+	Rarest last, Common excluded — it is the remainder tier.
+
+	Limited is excluded too, and for a different reason: it is not a rung on this
+	ladder at all. This list IS the roll pool, so leaving Limited out of it is what
+	makes "limited units can never be summoned" true by construction rather than by
+	a check somewhere that could be forgotten.
+]]
 local ASCENDING: { RarityId } = { "Rare", "Epic", "Legendary", "Mythic", "Secret", "God" }
+
+-- Can this band come out of the Roll Machine at all?
+local function isRollable(id: RarityId): boolean
+	return id ~= "Limited"
+end
 
 local function rollChances(luckMultiplier: number): { [RarityId]: number }
 	local luck = math.max(1, luckMultiplier)
@@ -226,4 +271,5 @@ return {
 	MIN_COMMON_CHANCE = MIN_COMMON_CHANCE,
 	MAX_TIER_RATIO = MAX_TIER_RATIO,
 	ASCENDING = ASCENDING,
+	isRollable = isRollable,
 }

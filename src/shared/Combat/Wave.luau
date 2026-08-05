@@ -76,13 +76,22 @@ local function buildSquad(profile: any): { Combatant }
 	for _, uid in Grid.fieldedUids(profile) do
 		local unit = profile.inventory[uid]
 		if unit then
-			local hp = Power.health(unit.rarity, unit.mutation, unit.level)
-			table.insert(squad, {
-				id = uid,
-				hp = hp,
-				maxHp = hp,
-				dps = Power.dps(unit.rarity, unit.mutation, unit.level),
-			})
+			--[[
+				A rostered unit fights with its OWN authored stats. Only a unit with
+				no roster entry falls back to the rarity ladder — which in practice
+				means synthetic units built by balance tests, never anything a player
+				can own, because every roll draws from the roster.
+			]]
+			local stats = Power.unitStats(unit.unitId, unit.mutation, unit.level)
+			local hp, dps
+			if stats then
+				hp = stats.health
+				dps = stats.attack * stats.speed
+			else
+				hp = Power.health(unit.rarity, unit.mutation, unit.level)
+				dps = Power.dps(unit.rarity, unit.mutation, unit.level)
+			end
+			table.insert(squad, { id = uid, hp = hp, maxHp = hp, dps = dps })
 		end
 	end
 	return squad

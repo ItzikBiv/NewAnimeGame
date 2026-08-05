@@ -20,6 +20,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Rarities = require(Shared.Config.Rarities)
 local Upgrades = require(Shared.Config.Upgrades)
+local Units = require(Shared.Config.Units)
 local Mutations = require(Shared.Config.Mutations)
 local Roll = require(Shared.Gacha.Roll)
 local Inventory = require(Shared.Inventory.Inventory)
@@ -90,8 +91,21 @@ function GameService.handleRoll(player: Player): (boolean?, string?)
 	profile.rollCount += 1
 	profile.stats.totalRolls += 1
 
+	--[[
+		Pick WHICH unit of that band. `Units.rollPool` only ever returns units whose
+		source is "roll", so a Limited or shop-only unit cannot arrive here no matter
+		what the band roll produced.
+	]]
+	local pool = Units.rollPool(result.rarity)
+	if #pool == 0 then
+		-- A band with nothing rollable in it is a data bug, not a player action.
+		profile.gold += ROLL_COST
+		return false, string.format("no rollable units in %s", result.rarity)
+	end
+	local unit = pool[math.floor(nextRandom() * #pool) + 1]
+
 	local granted, uidOrError = Inventory.grant(profile, {
-		unitId = string.format("%s_%s", result.rarity, result.mutation),
+		unitId = unit.id,
 		rarity = result.rarity,
 		mutation = result.mutation,
 		level = 1,

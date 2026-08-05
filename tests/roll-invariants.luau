@@ -62,6 +62,17 @@ check("ORDER[1]", Roll.ORDER[1], "Common")
 check("ORDER[7]", Roll.ORDER[7], "God")
 check("ORDER length", #Roll.ORDER, 7)
 
+-- Rarities has EIGHT bands but only seven are outcomes. Limited must never appear
+-- here: it has no base chance, so a roll that reached it would read nil and throw.
+-- This is a regression guard, not a hypothetical — it threw the first time.
+local sawLimited = false
+for _, id in Roll.ORDER do
+	if id == "Limited" then
+		sawLimited = true
+	end
+end
+expect("Limited is not a roll outcome", not sawLimited, "shop and events only")
+
 print("\nStatistical: 200,000 rolls at luck x1 match the designed distribution")
 local N = 200000
 local rng = seededRng(20260804)
