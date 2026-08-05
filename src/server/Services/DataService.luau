@@ -36,7 +36,32 @@ local STORE_NAME = "RollAnimeToFight_v1"
 local LOCK_TIMEOUT = 120
 local AUTOSAVE_INTERVAL = 60
 
-local store = DataStoreService:GetDataStore(STORE_NAME)
+--[[
+	The store is acquired LAZILY and inside a pcall.
+
+	`DataStoreService:GetDataStore()` throws in Studio when the place is
+	unpublished or Studio API access is off. Calling it at module scope meant that
+	throw propagated out of `require(DataService)` and killed the entire server
+	bootstrap — so remotes were never built and every client hung forever on
+	`WaitForChild("Remotes")`, with no server output to explain why.
+
+	A persistence layer failing must degrade persistence, never take the game down
+	with it.
+]]
+local store: DataStore? = nil
+local storeResolved = false
+
+local function getStore(): DataStore?
+	if storeResolved then
+		return store
+	end
+	storeResolved = true
+	local ok, result = pcall(function()
+		return DataStoreService:GetDataStore(STORE_NAME)
+	end)
+	store = ok and result or nil
+	return store
+end
 
 local DataService = {}
 
@@ -59,14 +84,6 @@ local function lockIsStale(lock: any): boolean
 end
 
 --[[
-	Load, migrate and validate a player's profile, claiming the session lock.
-
-	Returns nil when the profile is held by a live session elsewhere, or when it
-	fails validation. In BOTH cases the caller must refuse the session rather than
-	start a fresh profile — overwriting a real save is the one unrecoverable
-	mistake this system can make.
-]]
---[[
 	Is persistence actually available?
 
 	DataStores require a PUBLISHED place with "Enable Studio Access to API
@@ -86,10 +103,15 @@ local function persistenceAvailable(): boolean
 	if dataStoresAvailable ~= nil then
 		return dataStoresAvailable
 	end
-	local ok = pcall(function()
-		store:GetAsync("__probe")
-	end)
-	dataStoresAvailable = ok
+	local resolved = getStore()
+	if not resolved then
+		dataStoresAvailable = false
+	else
+		dataStoresAvailable = pcall(function()
+			resolved:GetAsync("__probe")
+		end)
+	end
+	local ok = dataStoresAvailable
 	if not ok then
 		warn(
 			"[DataService] DataStores unavailable — running with IN-MEMORY profiles. "
@@ -100,6 +122,14 @@ local function persistenceAvailable(): boolean
 	return ok
 end
 
+--[[
+	Load, migrate and validate a player's profile, claiming the session lock.
+
+	Returns nil when the profile is held by a live session elsewhere, or when it
+	fails validation. In BOTH cases the caller must refuse the session rather than
+	start a fresh profile — overwriting a real save is the one unrecoverable
+	mistake this system can make.
+]]
 function DataService.load(player: Player): any?
 	if loading[player] then
 		return nil
@@ -118,8 +148,9 @@ function DataService.load(player: Player): any?
 
 	loading[player] = true
 
+	local resolved = getStore() :: DataStore
 	local ok, result = pcall(function()
-		return store:UpdateAsync(key(player), function(stored)
+		return resolved:UpdateAsync(key(player), function(stored)
 			if stored ~= nil and not lockIsOurs(stored.lock) and not lockIsStale(stored.lock) then
 				-- Held elsewhere. Returning nil aborts the update.
 				return nil
@@ -180,8 +211,9 @@ function DataService.save(player: Player, release: boolean?): boolean
 		return false
 	end
 
+	local resolved = getStore() :: DataStore
 	local ok, err = pcall(function()
-		store:UpdateAsync(key(player), function(stored)
+		resolved:UpdateAsync(key(player), function(stored)
 			if stored and not lockIsOurs(stored.lock) and not lockIsStale(stored.lock) then
 				return nil -- lost the lock; do not clobber
 			end
