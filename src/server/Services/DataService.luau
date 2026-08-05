@@ -66,10 +66,56 @@ end
 	start a fresh profile — overwriting a real save is the one unrecoverable
 	mistake this system can make.
 ]]
+--[[
+	Is persistence actually available?
+
+	DataStores require a PUBLISHED place with "Enable Studio Access to API
+	Services" turned on. In a fresh local place neither is true, so every call
+	throws — and since a failed load correctly refuses the session, a playtester
+	would be kicked the instant they join with no idea why.
+
+	So in Studio, when DataStores are unreachable, fall back to an in-memory
+	profile. That makes a local playtest possible without publishing anything.
+	It is Studio-only and never applies in a live game: `RunService:IsStudio()`
+	is false on a real server, so production always uses the real store or
+	refuses the session.
+]]
+local dataStoresAvailable: boolean? = nil
+
+local function persistenceAvailable(): boolean
+	if dataStoresAvailable ~= nil then
+		return dataStoresAvailable
+	end
+	local ok = pcall(function()
+		store:GetAsync("__probe")
+	end)
+	dataStoresAvailable = ok
+	if not ok then
+		warn(
+			"[DataService] DataStores unavailable — running with IN-MEMORY profiles. "
+				.. "Progress will NOT be saved. Publish the place and enable Studio "
+				.. "access to API services for real persistence."
+		)
+	end
+	return ok
+end
+
 function DataService.load(player: Player): any?
 	if loading[player] then
 		return nil
 	end
+
+	if not persistenceAvailable() then
+		if not RunService:IsStudio() then
+			-- Live, and the store is unreachable. Refuse rather than hand out a
+			-- blank profile that will later overwrite a real save.
+			return nil
+		end
+		local profile = Schema.withDefaults(Schema.migrate(nil))
+		profiles[player] = profile
+		return profile
+	end
+
 	loading[player] = true
 
 	local ok, result = pcall(function()
@@ -123,6 +169,9 @@ function DataService.save(player: Player, release: boolean?): boolean
 	local profile = profiles[player]
 	if not profile then
 		return false
+	end
+	if not persistenceAvailable() then
+		return false -- in-memory Studio session; nothing to write
 	end
 
 	local valid, why = Schema.validate(profile)
