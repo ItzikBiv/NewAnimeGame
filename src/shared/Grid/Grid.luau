@@ -70,12 +70,27 @@ local function place(profile: any, uid: string, tileIndex: number): (boolean, st
 	end
 
 	local occupant = unitAt(profile, tileIndex)
-	if occupant and occupant ~= uid then
-		return false, string.format("tile %d already holds %s", tileIndex, occupant)
-	end
-
 	local existing = tileOf(profile, uid)
-	if existing then
+
+	--[[
+		An occupied tile SWAPS rather than refusing.
+
+		Refusing was wrong: it left a player permanently stuck with whatever they
+		placed first, since the only way to change a slot was to have an empty one.
+		Playtest caught it immediately — "tile 2 already holds u5" with no way out.
+
+		If the incoming unit was already on the board, the two trade places. If it
+		came from the bench, the displaced unit goes back to the bench. Either way
+		nothing is destroyed and no uid ends up on two tiles.
+	]]
+	if occupant and occupant ~= uid then
+		profile.grid[key(tileIndex)] = nil
+		if existing then
+			profile.grid[key(existing)] = occupant
+			profile.grid[key(tileIndex)] = uid
+			return true, nil
+		end
+	elseif existing then
 		profile.grid[key(existing)] = nil
 	end
 

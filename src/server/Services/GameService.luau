@@ -172,19 +172,51 @@ function GameService.handleUpgrade(player: Player, payload: any): (boolean?, str
 	return true
 end
 
-function GameService.handleWaveStart(player: Player): (boolean?, string?)
-	local profile = DataService.get(player)
-	if not profile then
-		return false, "profile not loaded"
-	end
+local function beginWave(player: Player, profile: any): (boolean, string?)
 	if activeWaves[player] then
 		return false, "a wave is already running"
 	end
 	if Grid.placedCount(profile) == 0 then
 		return false, "place at least one unit first"
 	end
-
 	activeWaves[player] = Wave.begin(profile, profile.wave)
+	return true, nil
+end
+
+function GameService.handleWaveStart(player: Player): (boolean?, string?)
+	local profile = DataService.get(player)
+	if not profile then
+		return false, "profile not loaded"
+	end
+	return beginWave(player, profile)
+end
+
+--[[
+	Stop a running wave. The wave is abandoned, not banked — Wave.commit refuses
+	anything but a clear, so nothing is paid out. That is deliberate: crediting a
+	partial wave would let a player farm gold by starting and stopping.
+]]
+function GameService.handleWaveStop(player: Player): (boolean?, string?)
+	if not activeWaves[player] then
+		return false, "no wave is running"
+	end
+	activeWaves[player] = nil
+	replicate(player)
+	return true
+end
+
+--[[
+	[C] The source game has an "Auto" toggle on the wave HUD, and its developers
+	recommend AFK farming — so auto-advance lives on the SERVER and keeps running
+	whether or not the player is looking at it.
+]]
+function GameService.handleAutoToggle(player: Player): (boolean?, string?)
+	local profile = DataService.get(player)
+	if not profile then
+		return false, "profile not loaded"
+	end
+	profile.autoWave = not profile.autoWave
+	replicate(player)
 	return true
 end
 
@@ -209,11 +241,18 @@ local function tickWaves(dt: number)
 		})
 
 		if state.outcome ~= "running" then
-			if state.outcome == "cleared" then
+			local cleared = state.outcome == "cleared"
+			if cleared then
 				Wave.commit(profile, state)
 			end
 			activeWaves[player] = nil
 			replicate(player)
+
+			-- Auto only chains on a CLEAR. A failed wave stops, so a player who has
+			-- outrun their squad is told rather than silently looped forever.
+			if cleared and profile.autoWave then
+				beginWave(player, profile)
+			end
 		end
 	end
 end

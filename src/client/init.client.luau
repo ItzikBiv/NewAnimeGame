@@ -127,9 +127,37 @@ local rollButton = button("ROLL", UDim2.new(0, 12, 0, 152), Color3.fromRGB(200, 
 	Remotes.get(Remotes.TO_SERVER.RequestRoll):FireServer()
 end)
 
-button("START WAVE", UDim2.new(0, 172, 0, 152), Color3.fromRGB(40, 160, 80), function()
-	Remotes.get(Remotes.TO_SERVER.RequestWaveStart):FireServer()
+--[[
+	One button that starts and stops, mirroring the source game's START/STOP.
+	`waveRunning` is driven purely by server WaveTick messages — the client never
+	decides it is running.
+]]
+local waveRunning = false
+
+local waveButton
+waveButton = button("START WAVE", UDim2.new(0, 172, 0, 152), Color3.fromRGB(40, 160, 80), function()
+	if waveRunning then
+		Remotes.get(Remotes.TO_SERVER.RequestWaveStop):FireServer()
+	else
+		Remotes.get(Remotes.TO_SERVER.RequestWaveStart):FireServer()
+	end
 end)
+
+local autoButton = button(
+	"Auto: —",
+	UDim2.new(0, 332, 0, 152),
+	Color3.fromRGB(55, 90, 150),
+	function()
+		Remotes.get(Remotes.TO_SERVER.RequestAutoToggle):FireServer()
+	end
+)
+
+local function setWaveRunning(running: boolean)
+	waveRunning = running
+	waveButton.Text = running and "STOP" or "START WAVE"
+	waveButton.BackgroundColor3 = running and Color3.fromRGB(190, 60, 60)
+		or Color3.fromRGB(40, 160, 80)
+end
 
 --=============================================================================
 -- The roll reveal
@@ -243,10 +271,17 @@ local function redraw()
 	end
 
 	goldLabel.Text = string.format("Gold: %d", profile.gold)
-	waveLabel.Text = string.format("Wave: %d", profile.wave)
+	if not waveRunning then
+		waveLabel.Text = string.format("Wave: %d", profile.wave)
+	end
+	autoButton.Text = profile.autoWave and "Auto: ON" or "Auto: OFF"
+	autoButton.BackgroundColor3 = profile.autoWave and Color3.fromRGB(60, 150, 90)
+		or Color3.fromRGB(55, 90, 150)
 
+	-- Clear BOTH buttons and labels. Destroying only buttons left the
+	-- "No units yet" notice stranded on screen behind the real rows.
 	for _, child in panel:GetChildren() do
-		if child:IsA("TextButton") then
+		if child:IsA("TextButton") or child:IsA("TextLabel") then
 			child:Destroy()
 		end
 	end
@@ -335,7 +370,15 @@ local function redraw()
 
 		tileButton.Activated:Connect(function()
 			if not selectedUid then
-				say("Select a unit from your inventory first.")
+				if occupant then
+					-- Tapping a filled tile with nothing held picks that unit up, so
+					-- a slot can be emptied and not only swapped.
+					selectedUid = occupant
+					say("Holding " .. unitCaption(unit) .. " — tap a slot to move it.", true)
+					redraw()
+				else
+					say("Select a unit from your inventory first.")
+				end
 				return
 			end
 			Remotes.get(Remotes.TO_SERVER.RequestPlace)
@@ -364,6 +407,7 @@ Remotes.get(Remotes.TO_CLIENT.ActionRejected).OnClientEvent:Connect(function(pay
 end)
 
 Remotes.get(Remotes.TO_CLIENT.WaveTick).OnClientEvent:Connect(function(tick)
+	setWaveRunning(tick.outcome == "running")
 	if tick.outcome == "running" then
 		waveLabel.Text = string.format(
 			"Wave %d — %d/%d enemies, %d units",

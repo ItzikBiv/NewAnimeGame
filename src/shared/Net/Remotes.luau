@@ -19,6 +19,8 @@ local TO_SERVER = {
 	RequestPlace = "RequestPlace",
 	RequestUpgrade = "RequestUpgrade",
 	RequestWaveStart = "RequestWaveStart",
+	RequestWaveStop = "RequestWaveStop",
+	RequestAutoToggle = "RequestAutoToggle",
 }
 
 -- Server -> Client.

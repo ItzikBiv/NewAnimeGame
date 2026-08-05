@@ -122,6 +122,22 @@ local validators: { [string]: Validator } = {
 		end
 		return true, nil
 	end,
+
+	RequestWaveStop = function(payload: any): (boolean, string?)
+		if payload ~= nil then
+			return false, "RequestWaveStop takes no arguments"
+		end
+		return true, nil
+	end,
+
+	-- Toggle, not set: the client cannot assert which state it wants, only that
+	-- it wants the other one. Nothing to forge.
+	RequestAutoToggle = function(payload: any): (boolean, string?)
+		if payload ~= nil then
+			return false, "RequestAutoToggle takes no arguments"
+		end
+		return true, nil
+	end,
 }
 
 --[[

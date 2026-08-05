@@ -40,6 +40,8 @@ local LIMITS: { [string]: Limit } = {
 	RequestPlace = { refillPerSecond = 10, capacity = 20 },
 	RequestUpgrade = { refillPerSecond = 2, capacity = 5 },
 	RequestWaveStart = { refillPerSecond = 1, capacity = 3 },
+	RequestWaveStop = { refillPerSecond = 1, capacity = 3 },
+	RequestAutoToggle = { refillPerSecond = 1, capacity = 4 },
 }
 
 -- Anything not listed above gets this, so a new remote is throttled by default

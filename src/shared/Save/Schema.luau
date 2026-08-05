@@ -45,6 +45,7 @@ export type Profile = {
 	gold: number,
 	rollCount: number,
 	nextUid: number,
+	autoWave: boolean,
 	currencies: { traitShards: number, essence: { [string]: number } },
 	upgrades: { [string]: number },
 	pity: { [string]: number },
@@ -76,6 +77,10 @@ local function defaultProfile(): Profile
 		wave = 1,
 		gold = STARTING_GOLD,
 		rollCount = 0,
+		-- [C] The source game has a persistent "Auto" toggle on the wave HUD, and
+		-- the devs recommend AFK farming — so this is a saved preference, not a
+		-- per-session one.
+		autoWave = false,
 		-- Server-issued unit ids. Units are keyed by uid, never by index — merges
 		-- and trades reorder the collection constantly, and index-keyed references
 		-- break under exactly that.
