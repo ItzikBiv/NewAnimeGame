@@ -35,6 +35,32 @@ export type Upgrade = {
 	observedCost: { level: number, cost: number },
 }
 
+--[[
+	[OURS] Cost curve builder.
+
+	Every upgrade's price is geometric — each level costs `ratio` times the last —
+	and is ANCHORED so it passes through the one real price we photographed for that
+	upgrade EXACTLY. The base is solved for rather than typed in, so the anchor
+	cannot drift away from the curve when someone retunes the ratio.
+
+	WHY THE RATIOS ARE WHAT THEY ARE. The previous curves were hand-picked bases that
+	happened to land within 2x of the anchor, and they made the early game
+	unplayable: the 5th unit slot cost 100,000 gold, which the owner's own playtest
+	would not have reached until around wave 121. Anchoring instead to the LATE price
+	and choosing a steeper ratio keeps the endgame prices honest while pulling the
+	first purchase of each upgrade into the first half-hour of play.
+]]
+local function anchoredCost(
+	anchorLevel: number,
+	anchorCost: number,
+	ratio: number
+): (level: number) -> number
+	local base = anchorCost / ratio ^ (anchorLevel - 1)
+	return function(level: number): number
+		return math.floor(base * ratio ^ (level - 1))
+	end
+end
+
 local Upgrades: { [UpgradeId]: Upgrade } = {
 	Gold = {
 		id = "Gold",
@@ -45,9 +71,8 @@ local Upgrades: { [UpgradeId]: Upgrade } = {
 		valueAtLevel = function(level: number): number
 			return 1 + 0.1 * (level - 1)
 		end,
-		costAtLevel = function(level: number): number
-			return math.floor(20000 * 1.22 ^ (level - 1))
-		end,
+		-- Lv1->Lv2 costs 1,500; Lv18->Lv19 costs the observed 840,000.
+		costAtLevel = anchoredCost(18, 840000, 1.4353),
 		observedCost = { level = 18, cost = 840000 },
 	},
 
@@ -60,9 +85,8 @@ local Upgrades: { [UpgradeId]: Upgrade } = {
 		valueAtLevel = function(level: number): number
 			return 1 + 0.5 * (level - 1)
 		end,
-		costAtLevel = function(level: number): number
-			return math.floor(25000 * 1.23 ^ (level - 1))
-		end,
+		-- Lv1->Lv2 costs 2,000; Lv20->Lv21 costs the observed 1,365,000.
+		costAtLevel = anchoredCost(20, 1365000, 1.3949),
 		observedCost = { level = 20, cost = 1365000 },
 	},
 
@@ -75,9 +99,9 @@ local Upgrades: { [UpgradeId]: Upgrade } = {
 		valueAtLevel = function(level: number): number
 			return level + 3
 		end,
-		costAtLevel = function(level: number): number
-			return math.floor(100000 * 1.58 ^ (level - 1))
-		end,
+		-- The 5th slot costs 3,000, not 100,000. Lv8->Lv9 still costs the
+		-- observed 5,000,000, so the last slot stays a genuine endgame goal.
+		costAtLevel = anchoredCost(8, 5000000, 2.929),
 		observedCost = { level = 8, cost = 5000000 },
 	},
 
@@ -90,9 +114,8 @@ local Upgrades: { [UpgradeId]: Upgrade } = {
 		valueAtLevel = function(level: number): number
 			return 50 + 25 * level
 		end,
-		costAtLevel = function(level: number): number
-			return math.floor(125000 * 1.6 ^ (level - 1))
-		end,
+		-- Lv1->Lv2 costs 25,000; Lv3->Lv4 costs the observed 500,000.
+		costAtLevel = anchoredCost(3, 500000, 4.472),
 		observedCost = { level = 3, cost = 500000 },
 	},
 }

@@ -302,6 +302,138 @@ make("UIGridLayout", {
 	CellPadding = UDim2.new(0, 6, 0, 6),
 })
 
+--=============================================================================
+-- Upgrades
+--=============================================================================
+
+--[[
+	The four upgrades, and until now the client had no way to buy any of them.
+
+	The server has handled RequestUpgrade since story 1.2, but nothing on screen
+	ever fired it — so gold had exactly one sink (rolling), the Slot upgrade was
+	unreachable, and a player was capped at four units permanently no matter how
+	long they played. That is not a missing screen, it is three quarters of the
+	progression being inert.
+
+	Each row shows what the upgrade does NOW and what the next level buys, because
+	"Gold Upgrade Lv7" on its own tells a player nothing about whether to spend.
+]]
+local upgradeFrame = make("Frame", {
+	Parent = gui,
+	Size = UDim2.new(0, 310, 0, 208),
+	Position = UDim2.new(0, 334, 0, 342),
+	BackgroundColor3 = Color3.fromRGB(20, 28, 40),
+	BackgroundTransparency = 0.2,
+})
+make("UICorner", { Parent = upgradeFrame, CornerRadius = UDim.new(0, 10) })
+make("UIListLayout", {
+	Parent = upgradeFrame,
+	Padding = UDim.new(0, 4),
+	SortOrder = Enum.SortOrder.LayoutOrder,
+})
+make("UIPadding", {
+	Parent = upgradeFrame,
+	PaddingTop = UDim.new(0, 6),
+	PaddingLeft = UDim.new(0, 6),
+	PaddingRight = UDim.new(0, 6),
+})
+
+-- Fixed order. Iterating the config table would reorder the rows between sessions,
+-- which makes a panel of four similar buttons genuinely hard to use.
+local UPGRADE_ORDER = { "Slot", "Luck", "Gold", "Inventory" }
+
+-- How each upgrade's value reads to a player. A raw number is not self-explanatory:
+-- Slot Lv5 means 8 slots, Gold Lv5 means x1.4 gold.
+local UPGRADE_UNIT: { [string]: (number) -> string } = {
+	Slot = function(v)
+		return string.format("%d slots", v)
+	end,
+	Inventory = function(v)
+		return string.format("%d storage", v)
+	end,
+	Gold = function(v)
+		return string.format("x%.1f gold", v)
+	end,
+	Luck = function(v)
+		return string.format("x%.1f luck", v)
+	end,
+}
+
+local upgradeRows: { [string]: TextButton } = {}
+for order, id in UPGRADE_ORDER do
+	local row = make("TextButton", {
+		Parent = upgradeFrame,
+		LayoutOrder = order,
+		Size = UDim2.new(1, -12, 0, 44),
+		BackgroundColor3 = Color3.fromRGB(45, 60, 90),
+		Text = "",
+		AutoButtonColor = true,
+	})
+	make("UICorner", { Parent = row, CornerRadius = UDim.new(0, 6) })
+
+	local title = label(row, "", UDim2.new(1, -12, 0, 20), UDim2.new(0, 8, 0, 3))
+	title.Name = "Title"
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.Font = Enum.Font.GothamBold
+
+	local detail = label(row, "", UDim2.new(1, -12, 0, 18), UDim2.new(0, 8, 0, 22))
+	detail.Name = "Detail"
+	detail.TextXAlignment = Enum.TextXAlignment.Left
+	detail.TextSize = 13
+
+	row.Activated:Connect(function()
+		Remotes.get(Remotes.TO_SERVER.RequestUpgrade):FireServer({ upgradeId = id })
+	end)
+
+	upgradeRows[id] = row
+end
+
+--[[
+	Repaint the upgrade rows from the profile.
+
+	The affordability colour is a HINT, not a gate: the button still fires and the
+	server still refuses, and its refusal lands in the status line. Disabling the
+	button client-side would mean a player who mis-reads the colour gets silence
+	instead of "costs 2703 gold" — and the server is the only thing that actually
+	knows whether a purchase is legal.
+]]
+local function redrawUpgrades()
+	if not profile then
+		return
+	end
+
+	for _, id in UPGRADE_ORDER do
+		local upgrade = Upgrades.Upgrades[id]
+		local level = profile.upgrades[id]
+		local row = upgradeRows[id]
+		local title = row:FindFirstChild("Title") :: TextLabel
+		local detail = row:FindFirstChild("Detail") :: TextLabel
+
+		local unit = UPGRADE_UNIT[id]
+		title.Text = string.format(
+			"%s  Lv%d  —  %s",
+			upgrade.displayName:gsub(" Upgrade", ""),
+			level,
+			unit(upgrade.valueAtLevel(level))
+		)
+
+		if level >= upgrade.maxLevel then
+			detail.Text = "MAX"
+			detail.TextColor3 = Color3.fromRGB(255, 210, 90)
+			row.BackgroundColor3 = Color3.fromRGB(60, 55, 35)
+		else
+			local cost = upgrade.costAtLevel(level)
+			local affordable = profile.gold >= cost
+			detail.Text =
+				string.format("next: %s  —  %d gold", unit(upgrade.valueAtLevel(level + 1)), cost)
+			detail.TextColor3 = affordable and Color3.fromRGB(150, 230, 150)
+				or Color3.fromRGB(190, 140, 140)
+			row.BackgroundColor3 = affordable and Color3.fromRGB(45, 80, 60)
+				or Color3.fromRGB(38, 45, 62)
+		end
+	end
+end
+
 -- Which tile a uid sits on, or nil if it is on the bench. Used to highlight the
 -- selected unit's tile in the arena.
 local function tileHolding(uid: string): number?
@@ -332,6 +464,7 @@ local function redraw()
 	]]
 	Arena.setSelectedTile(if selectedUid then tileHolding(selectedUid) else nil)
 	Arena.renderProfile(profile)
+	redrawUpgrades()
 
 	goldLabel.Text = string.format("Gold: %d", profile.gold)
 	if not waveRunning then

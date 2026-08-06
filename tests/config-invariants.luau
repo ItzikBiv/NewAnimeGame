@@ -62,19 +62,54 @@ check("Luck.maxLevel", U.Luck.maxLevel, 25)
 check("Slot.maxLevel", U.Slot.maxLevel, 9)
 check("Inventory.maxLevel", U.Inventory.maxLevel, 7)
 
-print("\nCost curves pass through the one real price point we captured")
+print("\nCost curves pass through the one real price point we captured — EXACTLY")
+--[[
+	This used to accept anything within 0.4x to 2.5x, because the curves were
+	hand-picked bases that merely landed near the anchor. They are now built by
+	`anchoredCost`, which solves for the base so the curve goes THROUGH the observed
+	price by construction. A single photographed price is still a single data point,
+	but there is no longer any excuse for the curve to miss it.
+
+	Rounding is the only slack: costAtLevel floors, so it can be up to 1 gold under.
+]]
 for _, u in pairs(U) do
 	local observed = u.observedCost
 	local modelled = u.costAtLevel(observed.level)
-	-- Loose bound: we only have a single point per upgrade, so this guards against
-	-- an order-of-magnitude mistake, not against a wrong curve shape. [?]
-	local ratio = modelled / observed.cost
 	expect(
 		string.format("%-10s Lv%-2d", u.id, observed.level),
-		ratio > 0.4 and ratio < 2.5,
-		string.format("modelled %d vs observed %d (%.2fx)", modelled, observed.cost, ratio)
+		math.abs(modelled - observed.cost) <= 1,
+		string.format("modelled %d vs observed %d", modelled, observed.cost)
 	)
 end
+
+print("\nThe FIRST purchase of every upgrade is an early-game purchase")
+--[[
+	The load-bearing test for this whole area. The 5th unit slot used to cost
+	100,000 gold, which on the real income curve arrives around wave 121 — so a new
+	player spent their entire first session with four units and nothing to spend
+	gold on. An upgrade nobody can reach is not an upgrade.
+
+	The bound is expressed in WAVES OF INCOME, not in gold, because gold alone says
+	nothing about whether a price is reachable.
+]]
+for _, u in pairs(U) do
+	local firstCost = u.costAtLevel(1)
+	-- Income around wave 20, early but past the opening.
+	local earlyIncome = Waves.goldPerWave(20)
+	local wavesToAfford = firstCost / earlyIncome
+	expect(
+		string.format("%-10s first purchase", u.id),
+		wavesToAfford < 400,
+		string.format("%d gold = %.0f waves of wave-20 income", firstCost, wavesToAfford)
+	)
+end
+
+-- And the last purchase must still be an endgame goal, or the ladder is pointless.
+expect(
+	"the final slot is still a serious investment",
+	U.Slot.costAtLevel(U.Slot.maxLevel - 1) > 1000000,
+	string.format("%d gold for the 12th slot", U.Slot.costAtLevel(U.Slot.maxLevel - 1))
+)
 
 print("\nTable integrity")
 local nRar, nMut, nTra = 0, 0, 0

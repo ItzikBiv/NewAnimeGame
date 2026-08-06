@@ -40,6 +40,23 @@ local WAVES_PER_EXTRA_ENEMY = 20
 local GOLD_PER_HP = 0.02
 
 --[[
+	[OURS] A FLAT floor on top of the proportional part, and it is load-bearing.
+
+	Purely proportional gold is right in the late game — it reproduces the ~50k per
+	wave seen around wave 170 in the owner's screenshots — but it starves the start.
+	Wave 1 paid 6 gold against a roll costing 100, so a new player fought SEVENTEEN
+	waves for their first roll, and the owner's own playtest sat at 809 gold on
+	wave 60. An idle game whose idle loop pays nothing for the first hour is not a
+	slow idle game, it is a broken one.
+
+	A flat term fixes the start without touching the end: at wave 1 it is 5x the
+	proportional part, by wave 100 it is 4% of it, and by wave 170 it has vanished
+	into rounding. So the late-game calibration against the screenshots survives
+	untouched — which is why this is a floor rather than a change to GOLD_PER_HP.
+]]
+local FLAT_GOLD_PER_KILL = 10
+
+--[[
 	[OURS] Boss waves are our addition, NOT observed in the source game's wave
 	rotation. The Admin Abuse event has a "boss spawn", so bosses exist as a concept
 	there, but nothing confirms them on the normal ramp.
@@ -104,7 +121,7 @@ end
 	Callers apply that separately so the upgrade stays a single source of truth.
 ]]
 local function goldPerKill(wave: number): number
-	local gold = math.ceil(baseEnemyHP(wave) * GOLD_PER_HP)
+	local gold = math.ceil(baseEnemyHP(wave) * GOLD_PER_HP) + FLAT_GOLD_PER_KILL
 	if isBossWave(wave) then
 		gold *= BOSS_GOLD_MULTIPLIER
 	end
@@ -144,6 +161,7 @@ return {
 	MIN_ENEMIES = MIN_ENEMIES,
 	MAX_ENEMIES = MAX_ENEMIES,
 	GOLD_PER_HP = GOLD_PER_HP,
+	FLAT_GOLD_PER_KILL = FLAT_GOLD_PER_KILL,
 	ENEMY_DAMAGE_PER_HP = ENEMY_DAMAGE_PER_HP,
 	BOSS_WAVE_INTERVAL = BOSS_WAVE_INTERVAL,
 	BOSS_HP_MULTIPLIER = BOSS_HP_MULTIPLIER,
