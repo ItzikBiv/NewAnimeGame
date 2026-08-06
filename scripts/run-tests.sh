@@ -46,6 +46,7 @@ MODULES=(
 	Config/Power
 	Save/Schema
 	Gacha/Roll
+	Gacha/Shop
 	Inventory/Inventory
 	Inventory/Merge
 	Grid/Grid
@@ -71,7 +72,7 @@ echo "print(\"modules parsed: ${names[*]}\n\")" >>"$OUT"
 
 # Each suite runs in its own chunk so a failure in one still reports the other.
 status=0
-for suite in config-invariants unit-invariants design-invariants save-invariants roll-invariants loop-invariants combat-invariants net-invariants; do
+for suite in config-invariants unit-invariants shop-invariants design-invariants save-invariants roll-invariants loop-invariants combat-invariants net-invariants; do
 	SUITE_OUT="$BUILD/${suite}.luau"
 	cp "$OUT" "$SUITE_OUT"
 	{

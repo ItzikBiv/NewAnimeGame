@@ -104,7 +104,15 @@ check("and keeps its version", migrated.schemaVersion, Schema.CURRENT_VERSION)
 local legacy = Schema.defaultProfile()
 legacy.schemaVersion = nil
 local fromLegacy, legacySteps = Schema.migrate(legacy)
-check("versionless data is treated as v1", legacySteps, 0)
+-- Treated as v1, so it now runs every migration from 1 up. That is one step today
+-- (the reroll shop) and will grow; asserting the CURRENT_VERSION gap rather than a
+-- literal means this keeps testing the claim instead of the count.
+check("versionless data is treated as v1", legacySteps, Schema.CURRENT_VERSION - 1)
+expect(
+	"and comes out fully migrated",
+	fromLegacy.schemaVersion == Schema.CURRENT_VERSION,
+	string.format("v%d", fromLegacy.schemaVersion)
+)
 expect("and survives migration", type(fromLegacy) == "table")
 
 -- Garbage in must not produce a corrupt profile.

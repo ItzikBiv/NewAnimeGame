@@ -20,9 +20,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Rarities = require(Shared.Config.Rarities)
 local Upgrades = require(Shared.Config.Upgrades)
-local Units = require(Shared.Config.Units)
 local Mutations = require(Shared.Config.Mutations)
 local Roll = require(Shared.Gacha.Roll)
+local Shop = require(Shared.Gacha.Shop)
 local Inventory = require(Shared.Inventory.Inventory)
 local Merge = require(Shared.Inventory.Merge)
 local Grid = require(Shared.Grid.Grid)
@@ -33,7 +33,6 @@ local DataService = require(script.Parent.DataService)
 
 local GameService = {}
 
-local ROLL_COST = 100
 local TICK_RATE = 0.2
 
 -- Live wave state per player. Not persisted: an interrupted wave is simply lost,
@@ -69,59 +68,94 @@ local function serverMinute(): number
 	return tonumber(os.date("!*t").min) or 0
 end
 
-function GameService.handleRoll(player: Player): (boolean?, string?)
+--[[
+	Reroll the shop. FREE, and deliberately so — owner's design.
+
+	It takes no gold, grants nothing, and advances no counter. That last part is the
+	one that matters: rerolling is unlimited, so anything this function incremented
+	could be farmed by holding the button. Pity therefore lives on `handleBuy`.
+]]
+function GameService.handleReroll(player: Player): (boolean?, string?)
 	local profile = DataService.get(player)
 	if not profile then
 		return false, "profile not loaded"
 	end
-	if profile.gold < ROLL_COST then
-		return false, "not enough gold"
+
+	local luck = Upgrades.Upgrades.Luck.valueAtLevel(profile.upgrades.Luck)
+	profile.offers = Shop.reroll(luck, profile.pity, serverMinute(), nextRandom)
+	profile.rollCount += 1
+
+	replicate(player)
+	return true
+end
+
+--[[
+	Buy one of the offers on the table.
+
+	The client sends a SLOT, never a unit or a price. Everything about what that
+	slot holds and what it costs is read here, from this player's own profile — a
+	client that could name the unit or the price would be choosing both.
+
+	ORDER MATTERS: refuse before charging, charge before granting, and refund if the
+	grant fails. A full inventory that has already taken the gold is the single most
+	infuriating bug this game could ship.
+]]
+function GameService.handleBuy(player: Player, payload: any): (boolean?, string?)
+	local profile = DataService.get(player)
+	if not profile then
+		return false, "profile not loaded"
+	end
+
+	local index = payload.offerIndex
+	local ok, reason = Shop.canBuy(profile.gold, profile.offers, index)
+	if not ok then
+		return false, reason
 	end
 	if Inventory.isFull(profile) then
-		-- Refuse before spending. Taking the gold and dropping the unit would be
-		-- the single most infuriating bug this game could ship.
 		return false, "inventory full"
 	end
 
-	profile.gold -= ROLL_COST
-
-	local luck = Upgrades.Upgrades.Luck.valueAtLevel(profile.upgrades.Luck)
-	local result = Roll.roll(luck, profile.pity, serverMinute(), nextRandom)
-	profile.pity = result.pity
-	profile.rollCount += 1
-	profile.stats.totalRolls += 1
-
-	--[[
-		Pick WHICH unit of that band. `Units.rollPool` only ever returns units whose
-		source is "roll", so a Limited or shop-only unit cannot arrive here no matter
-		what the band roll produced.
-	]]
-	local pool = Units.rollPool(result.rarity)
-	if #pool == 0 then
-		-- A band with nothing rollable in it is a data bug, not a player action.
-		profile.gold += ROLL_COST
-		return false, string.format("no rollable units in %s", result.rarity)
-	end
-	local unit = pool[math.floor(nextRandom() * #pool) + 1]
+	local offer = profile.offers[index]
+	profile.gold -= offer.price
 
 	local granted, uidOrError = Inventory.grant(profile, {
-		unitId = unit.id,
-		rarity = result.rarity,
-		mutation = result.mutation,
+		unitId = offer.unitId,
+		rarity = offer.rarity,
+		mutation = offer.mutation,
 		level = 1,
 	})
 	if not granted then
-		-- Refund rather than swallow. Should be unreachable given the check above.
-		profile.gold += ROLL_COST
+		profile.gold += offer.price
 		return false, uidOrError
 	end
 
+	--[[
+		PITY TICKS ON PURCHASE, not on reroll.
+
+		Its job is to protect a player from bad luck on gold they actually spent.
+		Rerolling is free, so counting rerolls would guarantee Secrets to anyone
+		willing to hold the button for a minute. Counting purchases keeps the
+		promise pity was always making.
+	]]
+	local ticked: { [string]: number } = table.clone(profile.pity)
+	for tier, remaining in pairs(ticked) do
+		ticked[tier] = remaining - 1
+	end
+	profile.pity = Roll.resetPityUpTo(ticked, offer.rarity)
+
+	profile.stats.totalRolls += 1
+
+	-- The slot is spent. It stays empty until the next reroll, so buying one offer
+	-- never silently re-rolls the other two.
+	table.remove(profile.offers, index)
+
 	fire(player, Remotes.TO_CLIENT.RollResult, {
 		uid = uidOrError,
-		rarity = result.rarity,
-		mutation = result.mutation,
-		fromPity = result.fromPity,
-		pity = result.pity,
+		unitId = offer.unitId,
+		rarity = offer.rarity,
+		mutation = offer.mutation,
+		price = offer.price,
+		pity = profile.pity,
 	})
 	replicate(player)
 	return true
@@ -267,6 +301,28 @@ local function tickWaves(dt: number)
 		]]
 		local front = Wave.frontLiving(state.enemies)
 
+		--[[
+			THE WHOLE BATTLE GOES ON THE WIRE, not just the totals.
+
+			Counts are enough to write "4/6 enemies" in a label, and that is all the
+			client could draw before: units stood still at full health and never fell
+			over, so a wave looked like a number changing rather than a fight. You
+			could lose four units and see nothing.
+
+			The cost is bounded and small — at most 12 units and 10 enemies, three
+			numbers each, five times a second. That is cheaper than almost any visual
+			effect it pays for, and it is the difference between an idle game you
+			watch and an idle game you ignore.
+		]]
+		local squadState = table.create(#state.squad)
+		for _, c in state.squad do
+			table.insert(squadState, { uid = c.id, hp = c.hp, maxHp = c.maxHp })
+		end
+		local enemyState = table.create(#state.enemies)
+		for _, c in state.enemies do
+			table.insert(enemyState, { hp = c.hp, maxHp = c.maxHp })
+		end
+
 		fire(player, Remotes.TO_CLIENT.WaveTick, {
 			wave = state.wave,
 			outcome = state.outcome,
@@ -277,6 +333,8 @@ local function tickWaves(dt: number)
 			unitsLeft = Wave.livingCount(state.squad),
 			frontHp = front and front.hp or 0,
 			frontMaxHp = front and front.maxHp or 0,
+			squad = squadState,
+			enemies = enemyState,
 		})
 
 		if state.outcome ~= "running" then
@@ -360,7 +418,6 @@ function GameService.start()
 	task.spawn(watchEventClock)
 end
 
-GameService.ROLL_COST = ROLL_COST
 GameService.rarityOrder = Rarities.ASCENDING
 
 return GameService

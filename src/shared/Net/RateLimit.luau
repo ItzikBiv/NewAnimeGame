@@ -8,7 +8,7 @@
 	limiting testable without waiting in real time. A rate limiter you cannot test
 	is a rate limiter you find out about in production.
 
-	Why this is not optional: a client loop calling RequestRoll thousands of times
+	Why this is not optional: a client loop calling RequestReroll thousands of times
 	a second is both an economy exploit and a server-performance incident. On
 	Roblox the client can fire any RemoteEvent at any rate, so the server has to
 	assume it will.
@@ -35,7 +35,14 @@ export type Limit = {
 	a player physically cannot roll 10 times a second, but a script trivially can.
 ]]
 local LIMITS: { [string]: Limit } = {
-	RequestRoll = { refillPerSecond = 5, capacity = 10 },
+	--[[
+		Rerolling is FREE, so gold no longer throttles it and this bucket is the only
+		thing that does. It stays generous enough that a human mashing the button is
+		never told to slow down, and tight enough that a script cannot churn offers
+		thousands of times a second looking for a God.
+	]]
+	RequestReroll = { refillPerSecond = 5, capacity = 12 },
+	RequestBuy = { refillPerSecond = 5, capacity = 10 },
 	RequestMerge = { refillPerSecond = 10, capacity = 20 },
 	RequestPlace = { refillPerSecond = 10, capacity = 20 },
 	RequestUpgrade = { refillPerSecond = 2, capacity = 5 },

@@ -26,7 +26,9 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Rarities = require(Shared.Config.Rarities)
 local Mutations = require(Shared.Config.Mutations)
 local Upgrades = require(Shared.Config.Upgrades)
+local Units = require(Shared.Config.Units)
 local Merge = require(Shared.Inventory.Merge)
+local Shop = require(Shared.Gacha.Shop)
 local Remotes = require(Shared.Net.Remotes)
 
 --[[
@@ -156,9 +158,22 @@ local function button(text: string, pos: UDim2, colour: Color3, onClick: () -> (
 	return b
 end
 
-local rollButton = button("ROLL", UDim2.new(0, 12, 0, 152), Color3.fromRGB(200, 45, 60), function()
-	Remotes.get(Remotes.TO_SERVER.RequestRoll):FireServer()
-end)
+--[[
+	REROLL IS FREE. Owner's design: rerolling costs nothing and can be spammed;
+	gold buys an offer, not a pull.
+
+	The label says so explicitly. A red button next to a gold counter reads as
+	"this costs something" no matter what the rules are, and a player who thinks
+	rerolling is expensive will hoard instead of using the machine as intended.
+]]
+local rollButton = button(
+	"REROLL — free",
+	UDim2.new(0, 12, 0, 152),
+	Color3.fromRGB(200, 45, 60),
+	function()
+		Remotes.get(Remotes.TO_SERVER.RequestReroll):FireServer()
+	end
+)
 
 --[[
 	One button that starts and stops, mirroring the source game's START/STOP.
@@ -303,6 +318,128 @@ make("UIGridLayout", {
 })
 
 --=============================================================================
+-- The shop
+--=============================================================================
+
+--[[
+	Three offers, and a BUY button under each.
+
+	Owner's design: rerolling is free and unlimited, and gold buys a unit rather
+	than a pull. So the interesting decision moved — it used to be "can I afford to
+	roll", and it is now "is this offer worth my gold, or do I reroll for a better
+	one". The card therefore has to show everything that decision needs: the unit,
+	its band, its mutation, and the price, all at once.
+]]
+local offerFrame = make("Frame", {
+	Parent = gui,
+	Size = UDim2.new(0, 310, 0, 128),
+	-- Third column. The grid and upgrades already own the second one.
+	Position = UDim2.new(0, 656, 0, 210),
+	BackgroundColor3 = Color3.fromRGB(20, 20, 28),
+	BackgroundTransparency = 0.2,
+})
+make("UICorner", { Parent = offerFrame, CornerRadius = UDim.new(0, 10) })
+make("UIListLayout", {
+	Parent = offerFrame,
+	Padding = UDim.new(0, 4),
+	SortOrder = Enum.SortOrder.LayoutOrder,
+})
+make("UIPadding", {
+	Parent = offerFrame,
+	PaddingTop = UDim.new(0, 6),
+	PaddingLeft = UDim.new(0, 6),
+	PaddingRight = UDim.new(0, 6),
+})
+
+local offerTitle =
+	label(gui, "SHOP — reroll is free", UDim2.new(0, 310, 0, 20), UDim2.new(0, 656, 0, 188))
+offerTitle.TextColor3 = Color3.fromRGB(255, 210, 90)
+offerTitle.TextSize = 15
+offerTitle.TextScaled = false
+
+local offerRows: { TextButton } = {}
+for index = 1, Shop.OFFER_COUNT do
+	local row = make("TextButton", {
+		Parent = offerFrame,
+		LayoutOrder = index,
+		Size = UDim2.new(1, -12, 0, 36),
+		BackgroundColor3 = Color3.fromRGB(38, 38, 50),
+		Text = "",
+		AutoButtonColor = true,
+	})
+	make("UICorner", { Parent = row, CornerRadius = UDim.new(0, 6) })
+
+	local name = label(row, "", UDim2.new(1, -80, 0, 18), UDim2.new(0, 8, 0, 2))
+	name.Name = "Name"
+	local sub = label(row, "", UDim2.new(1, -80, 0, 14), UDim2.new(0, 8, 0, 20))
+	sub.Name = "Sub"
+	sub.TextSize = 12
+	local price = label(row, "", UDim2.new(0, 74, 0, 32), UDim2.new(1, -78, 0, 2))
+	price.Name = "Price"
+	price.TextXAlignment = Enum.TextXAlignment.Right
+
+	--[[
+		The card sends its SLOT and nothing else. It does not send the unit, and it
+		does not send the price — the server reads both from the offers it generated.
+		A client that named either would be choosing what it buys and what it pays.
+	]]
+	row.Activated:Connect(function()
+		Remotes.get(Remotes.TO_SERVER.RequestBuy):FireServer({ offerIndex = index })
+	end)
+
+	offerRows[index] = row
+end
+
+local function redrawOffers()
+	if not profile then
+		return
+	end
+	local offers = profile.offers or {}
+
+	for index, row in offerRows do
+		local offer = offers[index]
+		local name = row:FindFirstChild("Name") :: TextLabel
+		local sub = row:FindFirstChild("Sub") :: TextLabel
+		local price = row:FindFirstChild("Price") :: TextLabel
+
+		if not offer then
+			-- An empty slot is either a fresh save or a slot the player just bought
+			-- out. Saying so beats an unexplained blank row.
+			name.Text = if #offers == 0 then "Reroll to see offers" else "— bought —"
+			name.TextColor3 = Color3.fromRGB(120, 120, 132)
+			sub.Text = ""
+			price.Text = ""
+			row.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+			continue
+		end
+
+		local rarity = Rarities.Rarities[offer.rarity]
+		local unit = Units.get(offer.unitId)
+		name.Text = unit and unit.displayName or offer.unitId
+		name.TextColor3 = rarity.color
+
+		if offer.mutation ~= "Normal" then
+			sub.Text = string.format(
+				"%s  %s",
+				Mutations.Mutations[offer.mutation].displayName,
+				offer.rarity
+			)
+			sub.TextColor3 = Mutations.Mutations[offer.mutation].color
+		else
+			sub.Text = offer.rarity
+			sub.TextColor3 = Color3.fromRGB(180, 180, 195)
+		end
+
+		local affordable = profile.gold >= offer.price
+		price.Text = string.format("%d", offer.price)
+		price.TextColor3 = affordable and Color3.fromRGB(150, 230, 150)
+			or Color3.fromRGB(200, 130, 130)
+		row.BackgroundColor3 = affordable and Color3.fromRGB(42, 62, 48)
+			or Color3.fromRGB(38, 38, 50)
+	end
+end
+
+--=============================================================================
 -- Upgrades
 --=============================================================================
 
@@ -321,7 +458,7 @@ make("UIGridLayout", {
 local upgradeFrame = make("Frame", {
 	Parent = gui,
 	Size = UDim2.new(0, 310, 0, 208),
-	Position = UDim2.new(0, 334, 0, 342),
+	Position = UDim2.new(0, 334, 0, 346),
 	BackgroundColor3 = Color3.fromRGB(20, 28, 40),
 	BackgroundTransparency = 0.2,
 })
@@ -465,6 +602,7 @@ local function redraw()
 	Arena.setSelectedTile(if selectedUid then tileHolding(selectedUid) else nil)
 	Arena.renderProfile(profile)
 	redrawUpgrades()
+	redrawOffers()
 
 	goldLabel.Text = string.format("Gold: %d", profile.gold)
 	if not waveRunning then

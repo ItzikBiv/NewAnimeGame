@@ -43,6 +43,11 @@ end
 -- Uids are server-issued and always "u" followed by digits. Anything else is
 -- forged, and bounding the length stops a megabyte string being used to make the
 -- server do pattern-matching work.
+-- Generous upper bound on an offer slot. The shop offers 3; this only has to be
+-- small enough that a hostile index cannot be used to probe, and large enough that
+-- growing the shop does not silently start rejecting valid clicks.
+local MAX_OFFER_INDEX = 16
+
 local MAX_UID_LENGTH = 32
 
 local function isUid(value: any): boolean
@@ -59,13 +64,39 @@ export type Validator = (payload: any) -> (boolean, string?)
 
 local validators: { [string]: Validator } = {
 	--[[
-		[C] RequestRoll takes NO arguments — architecture.md §3.1. There is no field
+		[C] RequestReroll takes NO arguments — architecture.md §3.1. There is no field
 		to tamper with; the server reads gold and luck from its own state. Anything
 		sent is either a bug or a probe, and both deserve rejection.
 	]]
-	RequestRoll = function(payload: any): (boolean, string?)
+	RequestReroll = function(payload: any): (boolean, string?)
 		if payload ~= nil then
-			return false, "RequestRoll takes no arguments"
+			return false, "RequestReroll takes no arguments"
+		end
+		return true, nil
+	end,
+
+	--[[
+		RequestBuy names an OFFER SLOT, never a unit and never a price.
+
+		Same rule as everywhere else here: the payload carries intent, and the server
+		looks up what that slot actually holds. A client able to send a unit id or a
+		price would be choosing what it buys and what it pays.
+
+		The bound below is a SHAPE check, not the real rule. This module stays free of
+		game imports on purpose — it must be able to reject a malformed payload
+		without knowing anything about shops — so it only rejects indices that could
+		never be a slot. Whether slot 3 currently holds anything is `Shop.canBuy`'s
+		call, on the server, against that player's actual offers.
+	]]
+	RequestBuy = function(payload: any): (boolean, string?)
+		if type(payload) ~= "table" then
+			return false, "expected a table"
+		end
+		if not isPositiveInteger(payload.offerIndex) then
+			return false, "invalid offerIndex"
+		end
+		if payload.offerIndex > MAX_OFFER_INDEX then
+			return false, "offerIndex out of range"
 		end
 		return true, nil
 	end,

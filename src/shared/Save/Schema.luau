@@ -16,7 +16,7 @@
 local Rarities = require(script.Parent.Parent.Config.Rarities)
 local Upgrades = require(script.Parent.Parent.Config.Upgrades)
 
-local CURRENT_VERSION = 1
+local CURRENT_VERSION = 2
 
 --[[
 	[OURS] Gold a brand-new profile starts with.
@@ -53,6 +53,10 @@ export type Profile = {
 	pity: { [string]: number },
 	inventory: { [string]: StoredUnit },
 	grid: { [string]: string },
+	-- The three units currently on offer. Persisted so a reroll survives a rejoin:
+	-- rerolling is free, but a player who finally saw a God offer should not lose it
+	-- to a disconnect.
+	offers: { any },
 	stats: { highestWave: number, highestGold: number, totalRolls: number },
 }
 
@@ -103,6 +107,10 @@ local function defaultProfile(): Profile
 		upgrades = upgrades,
 		pity = pity,
 		inventory = {},
+		-- Empty until the first reroll. The client shows "Reroll to see offers", which
+		-- is honest — pre-rolling on the server would spend a player's pity-forced
+		-- offer before they ever looked at the machine.
+		offers = {},
 		-- Maps tile index (as a string key, for DataStore JSON safety) to a unit
 		-- uid. Storing uids rather than unit copies is the invariant that prevents
 		-- duplication through the grid: one unit, one record.
@@ -119,7 +127,19 @@ end
 	logged in since version 1 still needs the whole chain.
 ]]
 local migrations: { [number]: (any) -> any } = {
-	-- [1] = function(data) ... returns version 2 ... end,
+	--[[
+		1 -> 2: the reroll shop.
+
+		Rolling used to cost gold and hand over a unit directly. It is now free and
+		unlimited, and produces three OFFERS that gold buys. Existing saves have no
+		`offers` field; an empty list is correct rather than a pre-rolled one, since
+		the player has not pressed reroll yet.
+	]]
+	[1] = function(data: any): any
+		data.offers = {}
+		data.schemaVersion = 2
+		return data
+	end,
 }
 
 --[[
@@ -189,7 +209,9 @@ local function validate(profile: any): (boolean, string?)
 	if type(profile) ~= "table" then
 		return false, "profile is not a table"
 	end
-	for _, field in { "schemaVersion", "wave", "gold", "inventory", "grid", "upgrades", "pity" } do
+	for _, field in
+		{ "schemaVersion", "wave", "gold", "inventory", "grid", "upgrades", "pity", "offers" }
+	do
 		if profile[field] == nil then
 			return false, "missing field: " .. field
 		end

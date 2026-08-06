@@ -35,14 +35,21 @@ end
 print("A burst is allowed, a flood is not")
 local buckets = {}
 local allowedInBurst = 0
-for _ = 1, 10 do
-	if RateLimit.check(buckets, "RequestRoll", 0) then
+-- Drive the loop from the CONFIGURED capacity, not a literal. This read `1, 10`,
+-- so raising the reroll bucket to 12 made the test fail on the test's own arithmetic
+-- rather than on the limiter.
+for _ = 1, RateLimit.LIMITS.RequestReroll.capacity do
+	if RateLimit.check(buckets, "RequestReroll", 0) then
 		allowedInBurst += 1
 	end
 end
-check("the full burst capacity gets through", allowedInBurst, RateLimit.LIMITS.RequestRoll.capacity)
+check(
+	"the full burst capacity gets through",
+	allowedInBurst,
+	RateLimit.LIMITS.RequestReroll.capacity
+)
 
-local blocked, waitFor = RateLimit.check(buckets, "RequestRoll", 0)
+local blocked, waitFor = RateLimit.check(buckets, "RequestReroll", 0)
 expect("the next call is refused", not blocked, string.format("retry in %.2fs", waitFor))
 expect(
 	"and it says how long to wait",
@@ -51,25 +58,25 @@ expect(
 )
 
 print("\nTokens refill over time")
-local refilled = RateLimit.check(buckets, "RequestRoll", 0.25)
+local refilled = RateLimit.check(buckets, "RequestReroll", 0.25)
 expect(
 	"a quarter second buys one token back",
 	refilled,
-	string.format("at %d/sec", RateLimit.LIMITS.RequestRoll.refillPerSecond)
+	string.format("at %d/sec", RateLimit.LIMITS.RequestReroll.refillPerSecond)
 )
 
 local full = {}
-RateLimit.check(full, "RequestRoll", 0)
+RateLimit.check(full, "RequestReroll", 0)
 local afterLongIdle = 0
 for _ = 1, 20 do
-	if RateLimit.check(full, "RequestRoll", 1000) then
+	if RateLimit.check(full, "RequestReroll", 1000) then
 		afterLongIdle += 1
 	end
 end
 check(
 	"a long idle refills to capacity, no further",
 	afterLongIdle,
-	RateLimit.LIMITS.RequestRoll.capacity
+	RateLimit.LIMITS.RequestReroll.capacity
 )
 
 print("\nA sustained flood is throttled to the configured rate")
@@ -77,11 +84,11 @@ print("\nA sustained flood is throttled to the configured rate")
 local flood = {}
 local got = 0
 for i = 1, 1000 do
-	if RateLimit.check(flood, "RequestRoll", i / 1000) then
+	if RateLimit.check(flood, "RequestReroll", i / 1000) then
 		got += 1
 	end
 end
-local limit = RateLimit.LIMITS.RequestRoll
+local limit = RateLimit.LIMITS.RequestReroll
 expect(
 	"1000 calls in one second yield only capacity + one second of refill",
 	got <= limit.capacity + limit.refillPerSecond + 1,
@@ -90,11 +97,11 @@ expect(
 
 print("\nEach remote has its own bucket")
 local shared = {}
-for _ = 1, RateLimit.LIMITS.RequestRoll.capacity do
-	RateLimit.check(shared, "RequestRoll", 0)
+for _ = 1, RateLimit.LIMITS.RequestReroll.capacity do
+	RateLimit.check(shared, "RequestReroll", 0)
 end
 expect("exhausting rolls does not block merges", (RateLimit.check(shared, "RequestMerge", 0)))
-expect("but rolls stay blocked", not (RateLimit.check(shared, "RequestRoll", 0)))
+expect("but rolls stay blocked", not (RateLimit.check(shared, "RequestReroll", 0)))
 
 print("\nAn unknown remote is throttled by default, not left open")
 local unknownLimit = RateLimit.limitFor("SomeRemoteNobodyConfigured")
@@ -108,20 +115,20 @@ expect(
 print("\nTime going backwards cannot mint tokens")
 -- Clocks are not guaranteed monotonic across a server's life.
 local backwards = {}
-for _ = 1, RateLimit.LIMITS.RequestRoll.capacity do
-	RateLimit.check(backwards, "RequestRoll", 100)
+for _ = 1, RateLimit.LIMITS.RequestReroll.capacity do
+	RateLimit.check(backwards, "RequestReroll", 100)
 end
 expect(
 	"a rewound clock does not refill the bucket",
-	not (RateLimit.check(backwards, "RequestRoll", 0)),
+	not (RateLimit.check(backwards, "RequestReroll", 0)),
 	"elapsed time is clamped at zero"
 )
 
-print("\nRequestRoll accepts no arguments at all")
+print("\nRequestReroll accepts no arguments at all")
 -- [C] architecture.md §3.1 — there is no field to tamper with.
-expect("nil is accepted", (Validate.validate("RequestRoll", nil)))
+expect("nil is accepted", (Validate.validate("RequestReroll", nil)))
 for _, hostile in { {}, { luck = 999 }, 42, "gimme", true } do
-	local ok = Validate.validate("RequestRoll", hostile)
+	local ok = Validate.validate("RequestReroll", hostile)
 	expect(string.format("payload %-12s is rejected", "`" .. tostring(hostile) .. "`"), not ok)
 end
 

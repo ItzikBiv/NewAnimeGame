@@ -45,8 +45,11 @@ DataService.start()
 GameService.start()
 
 -- 3. Every client->server remote goes through Guard. There is no other path.
-Guard.connect(Remotes.TO_SERVER.RequestRoll, function(player)
-	return GameService.handleRoll(player)
+Guard.connect(Remotes.TO_SERVER.RequestReroll, function(player)
+	return GameService.handleReroll(player)
+end)
+Guard.connect(Remotes.TO_SERVER.RequestBuy, function(player, payload)
+	return GameService.handleBuy(player, payload)
 end)
 Guard.connect(Remotes.TO_SERVER.RequestMerge, function(player, payload)
 	return GameService.handleMerge(player, payload)

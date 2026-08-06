@@ -14,7 +14,10 @@ local RunService = game:GetService("RunService")
 
 -- Client -> Server. Intent only, never outcome.
 local TO_SERVER = {
-	RequestRoll = "RequestRoll",
+	-- Free and unlimited: rerolls the three offers. Costs nothing, grants nothing.
+	RequestReroll = "RequestReroll",
+	-- Spends gold on one of those offers. This is the only path to owning a unit.
+	RequestBuy = "RequestBuy",
 	RequestMerge = "RequestMerge",
 	RequestPlace = "RequestPlace",
 	RequestUpgrade = "RequestUpgrade",

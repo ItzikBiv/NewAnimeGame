@@ -69,6 +69,15 @@ local enemyTiles: { BasePart } = {}
 local unitModels: { [number]: Model } = {} -- keyed by tile index
 local enemyModels: { Model } = {}
 
+-- uid -> tile index, rebuilt on every renderProfile. The wave tick identifies squad
+-- members by uid; the board indexes them by tile. This is the join between the two.
+local tileForUid: { [string]: number } = {}
+
+-- Per-tile liveness from the last tick, and each unit's colour before it died, so a
+-- revived or replaced unit is restored rather than left grey.
+local deadTiles: { [number]: boolean } = {}
+local originalColour: { [number]: Color3 } = {}
+
 local selectedTile: number? = nil
 local onTileClicked: ((tileIndex: number) -> ())? = nil
 
@@ -129,6 +138,58 @@ local function billboard(parent: Instance, offsetY: number, width: number): Bill
 		AlwaysOnTop = true,
 		MaxDistance = 260,
 	})
+end
+
+--[[
+	A health bar, attached above whatever it is given.
+
+	Extracted because units need one too. Before this, only enemies had a bar, which
+	meant the player could watch the enemy line melt but had no idea their own squad
+	was being ground down — the first sign of trouble was the wave simply ending.
+]]
+local function healthBar(parent: BasePart, offsetY: number, colour: Color3): Frame
+	local holder = make("BillboardGui", {
+		Parent = parent,
+		Adornee = parent,
+		Name = "HealthBar",
+		Size = UDim2.new(0, 84, 0, 9),
+		StudsOffsetWorldSpace = Vector3.new(0, offsetY, 0),
+		AlwaysOnTop = true,
+		MaxDistance = 260,
+	})
+	local track = make("Frame", {
+		Parent = holder,
+		Size = UDim2.new(1, 0, 1, 0),
+		BackgroundColor3 = Color3.fromRGB(18, 18, 24),
+		BorderSizePixel = 0,
+	})
+	make("UICorner", { Parent = track, CornerRadius = UDim.new(0, 3) })
+	local fill = make("Frame", {
+		Name = "Fill",
+		Parent = track,
+		Size = UDim2.new(1, 0, 1, 0),
+		BackgroundColor3 = colour,
+		BorderSizePixel = 0,
+	})
+	make("UICorner", { Parent = fill, CornerRadius = UDim.new(0, 3) })
+	return fill
+end
+
+--[[
+	Set a bar to a fraction, and colour it by how bad things are. A bar that only
+	shrinks reads as "some number went down"; one that turns red reads as "this unit
+	is about to die", which is the thing the player is actually meant to act on.
+]]
+local function setBar(fill: Frame?, fraction: number)
+	if not fill then
+		return
+	end
+	local f = math.clamp(fraction, 0, 1)
+	fill.Size = UDim2.new(f, 0, 1, 0)
+	fill.BackgroundColor3 = if f > 0.5
+		then Color3.fromRGB(90, 220, 110)
+		elseif f > 0.25 then Color3.fromRGB(240, 200, 70)
+		else Color3.fromRGB(235, 70, 70)
 end
 
 --[[
@@ -237,6 +298,8 @@ local function buildUnitModel(unit: any): Model
 		Text = string.format("Lv. %d", unit.level or 1),
 	})
 
+	healthBar(body, 3.2, Color3.fromRGB(90, 220, 110))
+
 	return model
 end
 
@@ -261,21 +324,7 @@ local function buildEnemyModel(index: number): Model
 	})
 	model.PrimaryPart = body
 
-	local bar = billboard(body, 3.6, 90)
-	bar.Size = UDim2.new(0, 90, 0, 10)
-	local track = make("Frame", {
-		Parent = bar,
-		Size = UDim2.new(1, 0, 1, 0),
-		BackgroundColor3 = Color3.fromRGB(25, 25, 30),
-		BorderSizePixel = 0,
-	})
-	make("Frame", {
-		Name = "Fill",
-		Parent = track,
-		Size = UDim2.new(1, 0, 1, 0),
-		BackgroundColor3 = Color3.fromRGB(230, 70, 70),
-		BorderSizePixel = 0,
-	})
+	healthBar(body, 3.4, Color3.fromRGB(235, 70, 70))
 
 	return model
 end
@@ -459,6 +508,9 @@ function Arena.renderProfile(profile: any)
 	end
 	table.clear(unitModels)
 
+	table.clear(tileForUid)
+	table.clear(originalColour)
+	table.clear(deadTiles)
 	for index = 1, #playerTiles do
 		local uid = profile.grid[tostring(index)]
 		local unit = uid and profile.inventory[uid]
@@ -467,6 +519,13 @@ function Arena.renderProfile(profile: any)
 			model.Parent = folder
 			positionUnitModel(model, playerTilePosition(index))
 			unitModels[index] = model
+			tileForUid[uid] = index
+			-- Kept so a unit that died last wave is restored to its rarity colour
+			-- rather than staying the corpse grey it was tinted.
+			local body = model:FindFirstChild("Body") :: BasePart?
+			if body then
+				originalColour[index] = body.Color
+			end
 		end
 	end
 end
@@ -479,10 +538,107 @@ end
 	bandwidth into cosmetics. So the line shows how many are alive, and the bar on
 	the front-most enemy shows the wave's remaining share.
 ]]
+--[[
+	Draw the squad's side of the fight: bars, and the dead falling over.
+
+	The tick identifies units by uid rather than by tile, because a unit's tile is a
+	player decision and its health is a server one — coupling them would mean a
+	placement made mid-wave could silently reassign someone else's health.
+]]
+local function renderSquad(squad: { any }?)
+	if not squad then
+		return
+	end
+
+	local living: { [number]: boolean } = {}
+	for _, entry in squad do
+		local tile = tileForUid[entry.uid]
+		local model = tile and unitModels[tile]
+		if model then
+			local body = model:FindFirstChild("Body") :: BasePart?
+			local head = model:FindFirstChild("Head") :: BasePart?
+			local bar = model:FindFirstChild("Fill", true) :: Frame?
+
+			local fraction = if entry.maxHp > 0 then entry.hp / entry.maxHp else 0
+			setBar(bar, fraction)
+
+			local alive = entry.hp > 0
+			living[tile] = alive
+
+			if body then
+				--[[
+					A dead unit FALLS OVER and greys out. Simply hiding it would read
+					as a rendering glitch; leaving it upright — which is what the last
+					build did — reads as "combat is not happening", which is exactly
+					the report that prompted this.
+				]]
+				if alive then
+					body.Transparency = 0
+					body.Color = originalColour[tile] or body.Color
+				else
+					body.Transparency = 0.55
+					body.Color = Color3.fromRGB(70, 70, 78)
+					local base = playerTilePosition(tile)
+					body.CFrame = CFrame.new(base + Vector3.new(0, 1.2, 0))
+						* CFrame.Angles(math.rad(90), 0, math.rad(90))
+				end
+			end
+			if head then
+				head.Transparency = if alive then 0 else 0.55
+				if not alive then
+					head.Position = playerTilePosition(tile) + Vector3.new(0, 1.2, 2.2)
+				end
+			end
+		end
+	end
+	deadTiles = living
+end
+
+--[[
+	A tracer between the front-most living unit and the front-most living enemy.
+
+	This is the only thing on the board that MOVES during a fight, and it is what
+	turns "the numbers are changing" into "they are shooting at each other". It is
+	drawn from the same front-most rule the simulation uses (Wave.luau), so what the
+	player sees firing is genuinely what is dealing the damage.
+]]
+local function renderTracer(fromTile: number?, toIndex: number?)
+	local beam = folder:FindFirstChild("Tracer") :: BasePart?
+	if not fromTile or not toIndex then
+		if beam then
+			beam.Transparency = 1
+		end
+		return
+	end
+
+	if not beam then
+		beam = make("Part", {
+			Name = "Tracer",
+			Parent = folder,
+			Anchored = true,
+			CanCollide = false,
+			CanQuery = false,
+			Material = Enum.Material.Neon,
+			Color = Color3.fromRGB(255, 235, 140),
+			Size = Vector3.new(0.35, 0.35, 1),
+		})
+	end
+
+	local a = playerTilePosition(fromTile) + Vector3.new(0, 4, 0)
+	local b = enemyTilePosition(toIndex) + Vector3.new(0, 3, 0)
+	local beamPart = beam :: BasePart
+	beamPart.Size = Vector3.new(0.35, 0.35, (b - a).Magnitude)
+	beamPart.CFrame = CFrame.lookAt((a + b) / 2, b)
+	-- Flickers rather than sitting solid, so it reads as repeated shots.
+	beamPart.Transparency = 0.25 + 0.5 * math.abs(math.sin(os.clock() * 14))
+end
+
 function Arena.renderWave(tick: any)
 	if not folder then
 		return
 	end
+
+	renderSquad(tick.squad)
 
 	local total = math.min(tick.enemyTotal or 0, #enemyTiles)
 	local alive = math.min(tick.enemiesLeft or 0, total)
@@ -513,31 +669,38 @@ function Arena.renderWave(tick: any)
 		]]
 		local dead = total - alive
 		local isAlive = index > dead
-		local isFront = index == dead + 1
 
 		body.Transparency = if isAlive then 0 else 0.85
 		body.Color = if isAlive then Color3.fromRGB(190, 55, 55) else Color3.fromRGB(70, 70, 78)
 
 		--[[
-			Only the FRONT enemy gets a real bar, because it is the only one whose
-			health the server sends. Everything behind it is at full by definition —
-			nothing has reached it yet. A bar we cannot back with a number would be
-			decoration pretending to be information, which is what the last build
-			shipped: it sat at 100% until the enemy vanished.
+			Per-enemy health now comes from the tick, so every enemy gets a true bar
+			rather than only the front one. The previous build could not do this — the
+			payload carried counts, and a count is not a health.
 		]]
-		local bar = body:FindFirstChildOfClass("BillboardGui")
-		if bar then
-			bar.Enabled = isAlive
-			local fill = bar:FindFirstChild("Fill", true) :: Frame?
-			if fill then
-				local fraction = 1
-				if isFront and (tick.frontMaxHp or 0) > 0 then
-					fraction = math.clamp((tick.frontHp or 0) / tick.frontMaxHp, 0, 1)
-				end
-				fill.Size = UDim2.new(fraction, 0, 1, 0)
-			end
+		local entry = tick.enemies and tick.enemies[index]
+		local bar = model:FindFirstChild("Fill", true) :: Frame?
+		local holder = body:FindFirstChild("HealthBar") :: BillboardGui?
+		if holder then
+			holder.Enabled = isAlive
+		end
+		if entry and entry.maxHp > 0 then
+			setBar(bar, entry.hp / entry.maxHp)
 		end
 	end
+
+	-- Fire from the first living unit at the first living enemy.
+	local firstLivingTile: number? = nil
+	for tile = 1, #playerTiles do
+		if unitModels[tile] and deadTiles[tile] ~= false then
+			firstLivingTile = tile
+			break
+		end
+	end
+	renderTracer(
+		if tick.outcome == "running" then firstLivingTile else nil,
+		if tick.outcome == "running" and alive > 0 then total - alive + 1 else nil
+	)
 end
 
 --[[
@@ -549,6 +712,32 @@ function Arena.clearWave()
 		model:Destroy()
 	end
 	table.clear(enemyModels)
+
+	local beam = folder and folder:FindFirstChild("Tracer") :: BasePart?
+	if beam then
+		beam.Transparency = 1
+	end
+
+	--[[
+		Stand the squad back up. Units are healed between waves — nothing in the
+		profile carries damage across a wave, and Wave.begin rebuilds the squad at
+		full health — so leaving corpses on the board would show a state the game
+		does not actually have.
+	]]
+	table.clear(deadTiles)
+	for tile, model in pairs(unitModels) do
+		local body = model:FindFirstChild("Body") :: BasePart?
+		local head = model:FindFirstChild("Head") :: BasePart?
+		if body then
+			body.Transparency = 0
+			body.Color = originalColour[tile] or body.Color
+			positionUnitModel(model, playerTilePosition(tile))
+		end
+		if head then
+			head.Transparency = 0
+		end
+		setBar(model:FindFirstChild("Fill", true) :: Frame?, 1)
+	end
 end
 
 --[[
@@ -575,6 +764,12 @@ RunService.RenderStepped:Connect(function()
 	end
 	local t = os.clock() - bobStart
 	for index, model in pairs(unitModels) do
+		-- A dead unit does not bob. Without this the loop keeps lifting the head back
+		-- to standing height every frame, so a fallen unit's head hovers over its own
+		-- body and the death reads as a glitch rather than a death.
+		if deadTiles[index] == false then
+			continue
+		end
 		local head = model:FindFirstChild("Head") :: BasePart?
 		if head then
 			local base = playerTilePosition(index)
