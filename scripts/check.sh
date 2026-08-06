@@ -52,8 +52,16 @@ else
 fi
 
 # Rojo — the project must still build.
+PLACE=/tmp/rollanimetofight-check.rbxlx
 if command -v rojo >/dev/null 2>&1 || [[ -n "${ROJO:-}" ]]; then
-	step "rojo build" "${ROJO:-rojo}" build -o /tmp/rollanimetofight-check.rbxlx
+	step "rojo build" "${ROJO:-rojo}" build -o "$PLACE"
+
+	# And the built tree must have the SHAPE the requires assume. Building
+	# successfully says nothing about where instances landed — a bad require path
+	# passes every other check here and only fails in a playtest.
+	if [[ -f "$PLACE" ]] && command -v python3 >/dev/null 2>&1; then
+		step "instance paths" python3 scripts/check-tree.py "$PLACE"
+	fi
 else
 	echo "skip: rojo not found (set ROJO=/path/to/rojo)"
 fi

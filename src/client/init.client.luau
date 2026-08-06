@@ -29,7 +29,38 @@ local Upgrades = require(Shared.Config.Upgrades)
 local Merge = require(Shared.Inventory.Merge)
 local Remotes = require(Shared.Net.Remotes)
 
-local Arena = require(script.Parent.Arena)
+--[[
+	The 3D board.
+
+	`script.Arena`, NOT `script.Parent.Arena`. This directory has an
+	init.client.luau, so Rojo turns the DIRECTORY into the LocalScript and every
+	sibling file becomes a CHILD of it. `script.Parent` is PlayerScripts, where no
+	Arena exists.
+
+	Loaded defensively, because of what the wrong path did: the require threw on this
+	line, the client script died before building anything, and the player got an
+	empty grey void with no HUD, no camera and no error visible in-game. The arena is
+	pure rendering — every action can still be taken from the 2D panels — so a
+	failure here must cost the board, never the whole client.
+]]
+local Arena
+do
+	local ok, loaded = pcall(function()
+		return require(script:FindFirstChild("Arena") :: any)
+	end)
+	if ok then
+		Arena = loaded
+	else
+		warn("[RollAnimeToFight] arena unavailable, running 2D only — " .. tostring(loaded))
+		-- Every Arena.* call becomes a no-op rather than a second crash.
+		local noop = function() end
+		Arena = setmetatable({}, {
+			__index = function()
+				return noop
+			end,
+		})
+	end
+end
 
 local player = Players.LocalPlayer
 local gui = Instance.new("ScreenGui")
