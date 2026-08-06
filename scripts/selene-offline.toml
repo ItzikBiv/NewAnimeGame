@@ -1,0 +1,7 @@
+# Selene config for the offline pre-push check. See roblox-offline.yml.
+# Keep the [rules] section in sync with ../selene.toml so local and CI agree.
+std = "roblox-offline"
+
+[rules]
+unused_variable = "warn"
+shadowing = "warn"
