@@ -37,6 +37,16 @@ export type StoredUnit = {
 	mutation: string,
 	level: number,
 	trait: string?,
+	--[[
+		Current health, carried BETWEEN waves. Owner's call: "dont revive the units
+		each turn" — a wave you barely survived should leave you weaker for the next
+		one, so the run is attrition rather than a fresh squad every time.
+
+		`nil` means untouched, which is why this needs no migration: every existing
+		save simply reads as a squad at full health, which is exactly what it was.
+		Wave.commitLoss clears the field again, so restarting a run heals everyone.
+	]]
+	hp: number?,
 }
 
 export type Profile = {

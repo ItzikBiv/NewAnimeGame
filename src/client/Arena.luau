@@ -35,6 +35,7 @@ local Rarities = require(Shared.Config.Rarities)
 local Mutations = require(Shared.Config.Mutations)
 local Units = require(Shared.Config.Units)
 local Upgrades = require(Shared.Config.Upgrades)
+local Power = require(Shared.Config.Power)
 
 local Arena = {}
 
@@ -303,6 +304,27 @@ local function buildUnitModel(unit: any): Model
 	return model
 end
 
+--[[
+	Put a unit on its back. Used both when it dies mid-wave and when the board is
+	redrawn between waves for a unit that is still down — damage persists now, so a
+	corpse has to survive a redraw.
+]]
+local function layDown(model: Model, tile: number)
+	local base = playerTilePosition(tile)
+	local body = model:FindFirstChild("Body") :: BasePart?
+	local head = model:FindFirstChild("Head") :: BasePart?
+	if body then
+		body.Transparency = 0.55
+		body.Color = Color3.fromRGB(70, 70, 78)
+		body.CFrame = CFrame.new(base + Vector3.new(0, 1.2, 0))
+			* CFrame.Angles(math.rad(90), 0, math.rad(90))
+	end
+	if head then
+		head.Transparency = 0.55
+		head.Position = base + Vector3.new(0, 1.2, 2.2)
+	end
+end
+
 local function positionUnitModel(model: Model, base: Vector3)
 	local body = model:FindFirstChild("Body") :: BasePart
 	local head = model:FindFirstChild("Head") :: BasePart
@@ -520,11 +542,28 @@ function Arena.renderProfile(profile: any)
 			positionUnitModel(model, playerTilePosition(index))
 			unitModels[index] = model
 			tileForUid[uid] = index
-			-- Kept so a unit that died last wave is restored to its rarity colour
-			-- rather than staying the corpse grey it was tinted.
 			local body = model:FindFirstChild("Body") :: BasePart?
 			if body then
 				originalColour[index] = body.Color
+			end
+
+			--[[
+				Draw the health the unit ACTUALLY has, not full.
+
+				`unit.hp` persists between waves, so a squad that limped out of the
+				last fight has to look like it. Showing full bars between waves would
+				be the client inventing a state the server does not have — and the
+				player would only find out when the next wave ended in two seconds.
+			]]
+			local stats = Power.unitStats(unit.unitId, unit.mutation, unit.level)
+			local maxHp = stats and stats.health or nil
+			if maxHp and maxHp > 0 then
+				local hp = if unit.hp ~= nil then math.clamp(unit.hp, 0, maxHp) else maxHp
+				setBar(model:FindFirstChild("Fill", true) :: Frame?, hp / maxHp)
+				if hp <= 0 then
+					layDown(model, index)
+					deadTiles[index] = false
+				end
 			end
 		end
 	end
@@ -565,29 +604,22 @@ local function renderSquad(squad: { any }?)
 			local alive = entry.hp > 0
 			living[tile] = alive
 
-			if body then
-				--[[
-					A dead unit FALLS OVER and greys out. Simply hiding it would read
-					as a rendering glitch; leaving it upright — which is what the last
-					build did — reads as "combat is not happening", which is exactly
-					the report that prompted this.
-				]]
-				if alive then
+			--[[
+				A dead unit FALLS OVER and greys out. Hiding it would read as a
+				rendering glitch; leaving it upright — which an earlier build did —
+				reads as "combat is not happening", which is exactly the report that
+				prompted all of this.
+			]]
+			if alive then
+				if body then
 					body.Transparency = 0
 					body.Color = originalColour[tile] or body.Color
-				else
-					body.Transparency = 0.55
-					body.Color = Color3.fromRGB(70, 70, 78)
-					local base = playerTilePosition(tile)
-					body.CFrame = CFrame.new(base + Vector3.new(0, 1.2, 0))
-						* CFrame.Angles(math.rad(90), 0, math.rad(90))
 				end
-			end
-			if head then
-				head.Transparency = if alive then 0 else 0.55
-				if not alive then
-					head.Position = playerTilePosition(tile) + Vector3.new(0, 1.2, 2.2)
+				if head then
+					head.Transparency = 0
 				end
+			else
+				layDown(model, tile)
 			end
 		end
 	end
@@ -595,42 +627,60 @@ local function renderSquad(squad: { any }?)
 end
 
 --[[
-	A tracer between the front-most living unit and the front-most living enemy.
+	One tracer PER LIVING UNIT, because every unit now fights at once.
 
-	This is the only thing on the board that MOVES during a fight, and it is what
-	turns "the numbers are changing" into "they are shooting at each other". It is
-	drawn from the same front-most rule the simulation uses (Wave.luau), so what the
-	player sees firing is genuinely what is dealing the damage.
+	The pairing mirrors `Wave.dealDamage` exactly: living attacker `i` hits living
+	defender `((i-1) mod n) + 1`. That duplication is deliberate and worth naming —
+	the alternative is putting the pairing on the wire every tick, which is real
+	bandwidth spent on a cosmetic. The rule is three lines and it is documented in
+	Wave.luau as the combat model, so the risk is that someone changes the model and
+	not the drawing. If that happens the beams point at the wrong enemies, which is
+	visible immediately rather than silently wrong.
 ]]
-local function renderTracer(fromTile: number?, toIndex: number?)
-	local beam = folder:FindFirstChild("Tracer") :: BasePart?
-	if not fromTile or not toIndex then
-		if beam then
-			beam.Transparency = 1
-		end
-		return
-	end
+local tracers: { BasePart } = {}
 
+local function clearTracers()
+	for _, beam in tracers do
+		beam.Transparency = 1
+	end
+end
+
+local function tracerAt(index: number): BasePart
+	local beam = tracers[index]
 	if not beam then
 		beam = make("Part", {
-			Name = "Tracer",
+			Name = "Tracer" .. index,
 			Parent = folder,
 			Anchored = true,
 			CanCollide = false,
 			CanQuery = false,
 			Material = Enum.Material.Neon,
 			Color = Color3.fromRGB(255, 235, 140),
-			Size = Vector3.new(0.35, 0.35, 1),
+			Size = Vector3.new(0.25, 0.25, 1),
 		})
+		tracers[index] = beam
+	end
+	return beam
+end
+
+local function renderTracers(livingTiles: { number }, livingEnemies: { number })
+	clearTracers()
+	if #livingTiles == 0 or #livingEnemies == 0 then
+		return
 	end
 
-	local a = playerTilePosition(fromTile) + Vector3.new(0, 4, 0)
-	local b = enemyTilePosition(toIndex) + Vector3.new(0, 3, 0)
-	local beamPart = beam :: BasePart
-	beamPart.Size = Vector3.new(0.35, 0.35, (b - a).Magnitude)
-	beamPart.CFrame = CFrame.lookAt((a + b) / 2, b)
-	-- Flickers rather than sitting solid, so it reads as repeated shots.
-	beamPart.Transparency = 0.25 + 0.5 * math.abs(math.sin(os.clock() * 14))
+	for i, tile in livingTiles do
+		local enemyIndex = livingEnemies[((i - 1) % #livingEnemies) + 1]
+		local a = playerTilePosition(tile) + Vector3.new(0, 4, 0)
+		local b = enemyTilePosition(enemyIndex) + Vector3.new(0, 3, 0)
+
+		local beam = tracerAt(i)
+		beam.Size = Vector3.new(0.25, 0.25, (b - a).Magnitude)
+		beam.CFrame = CFrame.lookAt((a + b) / 2, b)
+		-- Flickers rather than sitting solid, so it reads as repeated shots. The
+		-- phase is offset per unit so the board does not pulse as one block.
+		beam.Transparency = 0.2 + 0.55 * math.abs(math.sin(os.clock() * 14 + i))
+	end
 end
 
 function Arena.renderWave(tick: any)
@@ -689,18 +739,24 @@ function Arena.renderWave(tick: any)
 		end
 	end
 
-	-- Fire from the first living unit at the first living enemy.
-	local firstLivingTile: number? = nil
+	if tick.outcome ~= "running" then
+		clearTracers()
+		return
+	end
+
+	-- Everyone who is still standing, on both sides, in board order.
+	local livingTiles: { number } = {}
 	for tile = 1, #playerTiles do
 		if unitModels[tile] and deadTiles[tile] ~= false then
-			firstLivingTile = tile
-			break
+			table.insert(livingTiles, tile)
 		end
 	end
-	renderTracer(
-		if tick.outcome == "running" then firstLivingTile else nil,
-		if tick.outcome == "running" and alive > 0 then total - alive + 1 else nil
-	)
+	local livingEnemies: { number } = {}
+	for index = total - alive + 1, total do
+		table.insert(livingEnemies, index)
+	end
+
+	renderTracers(livingTiles, livingEnemies)
 end
 
 --[[
@@ -712,32 +768,20 @@ function Arena.clearWave()
 		model:Destroy()
 	end
 	table.clear(enemyModels)
-
-	local beam = folder and folder:FindFirstChild("Tracer") :: BasePart?
-	if beam then
-		beam.Transparency = 1
-	end
+	clearTracers()
 
 	--[[
-		Stand the squad back up. Units are healed between waves — nothing in the
-		profile carries damage across a wave, and Wave.begin rebuilds the squad at
-		full health — so leaving corpses on the board would show a state the game
-		does not actually have.
+		THE SQUAD IS NOT STOOD BACK UP.
+
+		This used to heal every unit and reset every bar, on the reasoning that units
+		were rebuilt at full health each wave. They are not any more — damage carries
+		between waves, so healing the board here would show a squad that is fine while
+		the server knows it is nearly dead, and the lie would only surface when the
+		next wave ended instantly.
+
+		The board is redrawn from the profile instead, which is where the true health
+		now lives. `renderProfile` reads it.
 	]]
-	table.clear(deadTiles)
-	for tile, model in pairs(unitModels) do
-		local body = model:FindFirstChild("Body") :: BasePart?
-		local head = model:FindFirstChild("Head") :: BasePart?
-		if body then
-			body.Transparency = 0
-			body.Color = originalColour[tile] or body.Color
-			positionUnitModel(model, playerTilePosition(tile))
-		end
-		if head then
-			head.Transparency = 0
-		end
-		setBar(model:FindFirstChild("Fill", true) :: Frame?, 1)
-	end
 end
 
 --[[

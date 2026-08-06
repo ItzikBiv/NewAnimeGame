@@ -294,6 +294,144 @@ expect(
 	"a clear must never rewind the player"
 )
 
+print("\nEVERY unit fights at once, not one at a time")
+--[[
+	[C] Owner: "make every team fight at the same time not one by one".
+
+	The observable difference is that damage SPREADS. Under focus-fire the whole
+	squad hammered one enemy, so after a single tick exactly one enemy was hurt no
+	matter how many units were on the board.
+]]
+local wide = squadOf(4, "Legendary")
+local spread = Wave.begin(wide, 3)
+Wave.tick(spread, 0.1)
+local hurt = 0
+for _, enemy in spread.enemies do
+	if enemy.hp < enemy.maxHp then
+		hurt += 1
+	end
+end
+expect(
+	"one tick damages several enemies",
+	hurt > 1,
+	string.format("%d of %d enemies took damage", hurt, #spread.enemies)
+)
+check("and there were several to hit", #spread.enemies > 1, true)
+
+-- A wider board must actually kill faster. If it did not, placing more units would
+-- be pointless and the whole Slot upgrade ladder would be decoration.
+local narrow = Wave.simulate(squadOf(1, "Legendary"), 12, 0.1, 300)
+local broad = Wave.simulate(squadOf(4, "Legendary"), 12, 0.1, 300)
+expect(
+	"four units clear faster than one",
+	broad.elapsed < narrow.elapsed,
+	string.format("%.1fs with 4 vs %.1fs with 1", broad.elapsed, narrow.elapsed)
+)
+
+-- Attackers retarget when their target dies, rather than swinging at a corpse.
+local retarget = Wave.begin(squadOf(4, "Legendary"), 3)
+for _, enemy in retarget.enemies do
+	enemy.hp = 1
+end
+Wave.tick(retarget, 0.1)
+check("a tick that can kill everything ends the wave", retarget.outcome, "cleared")
+
+print("\nGold is still paid exactly once per enemy, even in a simultaneous kill")
+--[[
+	This is the risk the new model introduces. Several enemies can now die on the
+	same tick, and an enemy can die on a tick where the loop is not looking at it —
+	so payment is tracked per enemy id rather than inferred from what just happened.
+]]
+local payOnce = squadOf(4, "Legendary")
+local payState = Wave.begin(payOnce, 3)
+for _, enemy in payState.enemies do
+	enemy.hp = 1
+end
+Wave.tick(payState, 0.5)
+local expectedOnce = math.floor(Waves.goldPerKill(3) * payState.goldMultiplier) * #payState.enemies
+check("all enemies died together and each paid once", payState.goldEarned, expectedOnce)
+for _ = 1, 20 do
+	Wave.tick(payState, 0.5)
+end
+check("and ticking on pays nothing more", payState.goldEarned, expectedOnce)
+
+print("\nDamage CARRIES between waves — units are not revived each turn")
+-- [C] Owner: "dont revive the units each turn".
+local attrition = squadOf(4, "Rare")
+attrition.wave = 30
+local firstRun = Wave.simulate(attrition, 30, 0.1, 300)
+if firstRun.outcome == "cleared" then
+	Wave.commit(attrition, firstRun)
+
+	local wounded, total = 0, 0
+	for _, unit in pairs(attrition.inventory) do
+		total += 1
+		if unit.hp ~= nil then
+			wounded += 1
+		end
+	end
+	check("every fielded unit recorded its health", wounded, total)
+
+	-- And the NEXT wave has to start from that health, or persisting it was pointless.
+	local carried = Wave.buildSquad(attrition)
+	local startedHurt = false
+	for _, combatant in carried do
+		if combatant.hp < combatant.maxHp then
+			startedHurt = true
+		end
+	end
+	expect(
+		"the next wave starts from the damage taken",
+		startedHurt,
+		"a wave is attrition, not a fresh squad"
+	)
+end
+
+print("\nA stored health above the unit's ceiling is clamped, not trusted")
+-- A merge or upgrade can raise maxHp between waves. A stale higher value would
+-- draw a bar past the end of its own track.
+local clamped = squadOf(1, "Common")
+for uid, unit in pairs(clamped.inventory) do
+	unit.hp = 1e9
+	local _ = uid
+end
+for _, combatant in Wave.buildSquad(clamped) do
+	expect(
+		"health is capped at the unit's maximum",
+		combatant.hp == combatant.maxHp,
+		string.format("%.0f of %.0f", combatant.hp, combatant.maxHp)
+	)
+end
+
+print("\nA dead unit contributes nothing, but a LOSS heals the whole board")
+local downed = squadOf(4, "Rare")
+for _, unit in pairs(downed.inventory) do
+	unit.hp = 0
+end
+local corpseRun = Wave.begin(downed, 5)
+check("a squad of corpses has nobody living", Wave.livingCount(corpseRun.squad), 0)
+Wave.tick(corpseRun, 0.1)
+check("and loses immediately", corpseRun.outcome, "failed")
+
+--[[
+	Healing on loss is what stops persistence becoming a one-way ratchet. Without
+	it a wiped squad could never win again: dead units lose instantly, and losing
+	would not help.
+]]
+Wave.commitLoss(downed, corpseRun)
+local anyStillHurt = false
+for _, unit in pairs(downed.inventory) do
+	if unit.hp ~= nil then
+		anyStillHurt = true
+	end
+end
+expect(
+	"losing restores every unit to full",
+	not anyStillHurt,
+	"otherwise a wipe is an unrecoverable save"
+)
+check("and the squad can fight again", Wave.livingCount(Wave.begin(downed, 1).squad), 4)
+
 print(string.format("\n%d passed, %d failed", pass, fail))
 if fail > 0 then
 	error(string.format("%d check(s) failed", fail))
