@@ -255,6 +255,18 @@ local function tickWaves(dt: number)
 
 		Wave.tick(state, dt)
 
+		--[[
+			The front enemy's health goes on the wire because the client cannot infer
+			it. `enemiesLeft` is a count, not a health, so a bar driven from it would
+			sit at full until the enemy vanished — which is exactly what the first
+			playtest showed. Two numbers is the whole cost, and it is what makes the
+			boss bar honest.
+
+			[C] The source game shows this same pair as raw numbers, e.g.
+			"Jigi 6604153.7/8030480.2 HP".
+		]]
+		local front = Wave.frontLiving(state.enemies)
+
 		fire(player, Remotes.TO_CLIENT.WaveTick, {
 			wave = state.wave,
 			outcome = state.outcome,
@@ -263,6 +275,8 @@ local function tickWaves(dt: number)
 			enemiesLeft = Wave.livingCount(state.enemies),
 			enemyTotal = #state.enemies,
 			unitsLeft = Wave.livingCount(state.squad),
+			frontHp = front and front.hp or 0,
+			frontMaxHp = front and front.maxHp or 0,
 		})
 
 		if state.outcome ~= "running" then

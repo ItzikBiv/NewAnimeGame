@@ -85,17 +85,25 @@ end
 --[[
 	Where a tile sits in the world.
 
-	Player tiles run left-to-right, front row first, so tile 1 is the near-left
-	corner — the one closest to the camera. That matters: `Grid` hands out tile
-	indices 1..slots and the player has to be able to guess which is which without
-	being told.
+	Tile 1 is the tile the player reads FIRST: screen-left, on the rank facing the
+	enemy. Indices then run left-to-right, front rank before back rank. `Grid` hands
+	out indices 1..slots and the inventory panel lists them in that order, so the
+	board has to agree with the panel or the two views describe different games.
+
+	THE X AXIS IS NEGATED, and that is not arbitrary. The camera sits at -Z looking
+	toward +Z, and under that view +X falls on the LEFT of the screen. Computing x
+	the obvious way mirrored the whole rank: the first playtest put tile 1 on the
+	right, so the panel read Legendary, Epic, Epic, Secret while the board showed
+	Secret, Epic, Epic, Legendary. Negating x puts increasing index on increasing
+	screen-x, which is what every other part of the UI assumes.
 ]]
 local function playerTilePosition(index: number): Vector3
 	local zeroBased = index - 1
 	local row = math.floor(zeroBased / PLAYER_COLUMNS)
 	local column = zeroBased % PLAYER_COLUMNS
 
-	local x = (column - (PLAYER_COLUMNS - 1) / 2) * PITCH
+	local x = -(column - (PLAYER_COLUMNS - 1) / 2) * PITCH
+	-- Row 0 is the rank nearest the lane — the front line, facing the enemy.
 	local z = -(LANE_DEPTH / 2) - row * PITCH
 	return ARENA_ORIGIN + Vector3.new(x, TILE_HEIGHT / 2, z)
 end
@@ -105,7 +113,8 @@ local function enemyTilePosition(index: number): Vector3
 	local row = math.floor(zeroBased / ENEMY_COLUMNS)
 	local column = zeroBased % ENEMY_COLUMNS
 
-	local x = (column - (ENEMY_COLUMNS - 1) / 2) * PITCH
+	-- Same negation, same reason: enemy 1 is the one the player sees on the left.
+	local x = -(column - (ENEMY_COLUMNS - 1) / 2) * PITCH
 	local z = (LANE_DEPTH / 2) + row * PITCH
 	return ARENA_ORIGIN + Vector3.new(x, TILE_HEIGHT / 2, z)
 end
@@ -114,7 +123,8 @@ local function billboard(parent: Instance, offsetY: number, width: number): Bill
 	return make("BillboardGui", {
 		Parent = parent,
 		Adornee = parent,
-		Size = UDim2.new(0, width, 0, 44),
+		-- 52px fits three stacked 16px rows: mutation, name, level.
+		Size = UDim2.new(0, width, 0, 52),
 		StudsOffsetWorldSpace = Vector3.new(0, offsetY, 0),
 		AlwaysOnTop = true,
 		MaxDistance = 260,
@@ -174,29 +184,54 @@ local function buildUnitModel(unit: any): Model
 		})
 	end
 
-	local plate = billboard(body, 4.6, 190)
+	--[[
+		The plate is NARROWER THAN THE TILE PITCH on purpose.
+
+		At 190px it was wider than the gap between units, so neighbouring plates
+		overlapped and the names read as one smear sitting off to the side of the
+		figures. A plate must not be able to reach its neighbour's tile, so name and
+		level are stacked rather than set side by side, and a long name is truncated
+		instead of being allowed to grow.
+	]]
+	local plate = billboard(body, 5.0, 104)
 	local name = make("TextLabel", {
 		Parent = plate,
-		Size = UDim2.new(1, 0, 0, 22),
+		Size = UDim2.new(1, 0, 0, 20),
 		BackgroundTransparency = 1,
 		Font = Enum.Font.GothamBold,
-		TextSize = 15,
+		TextSize = 14,
 		TextColor3 = rarity.color,
 		TextStrokeTransparency = 0.2,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		Text = if rosterUnit then rosterUnit.displayName else unit.unitId,
 	})
+
+	--[[
+		The mutation goes on its OWN line above the name, matching the source game's
+		unit card, where the mutation is printed above the unit rather than prefixed
+		to it. Prefixing made "Diamond Rengundam" too long for any sane plate width.
+	]]
 	if unit.mutation ~= "Normal" then
-		name.Text = string.format("%s %s", mutation.displayName, name.Text)
-		name.TextColor3 = mutation.color
+		name.Position = UDim2.new(0, 0, 0, 16)
+		make("TextLabel", {
+			Parent = plate,
+			Size = UDim2.new(1, 0, 0, 16),
+			BackgroundTransparency = 1,
+			Font = Enum.Font.GothamBold,
+			TextSize = 12,
+			TextColor3 = mutation.color,
+			TextStrokeTransparency = 0.2,
+			Text = mutation.displayName,
+		})
 	end
 
 	make("TextLabel", {
 		Parent = plate,
-		Size = UDim2.new(1, 0, 0, 18),
-		Position = UDim2.new(0, 0, 0, 22),
+		Size = UDim2.new(1, 0, 0, 16),
+		Position = UDim2.new(0, 0, 1, -16),
 		BackgroundTransparency = 1,
 		Font = Enum.Font.Gotham,
-		TextSize = 13,
+		TextSize = 12,
 		TextColor3 = Color3.fromRGB(220, 220, 230),
 		TextStrokeTransparency = 0.4,
 		Text = string.format("Lv. %d", unit.level or 1),
@@ -468,13 +503,39 @@ function Arena.renderWave(tick: any)
 		local body = model.PrimaryPart :: BasePart
 		body.CFrame = CFrame.new(enemyTilePosition(index) + Vector3.new(0, 2.8, 0))
 
-		local isAlive = index <= alive
+		--[[
+			WHICH enemies are dead: the ones at the FRONT.
+
+			Both sides focus-fire the front-most living target (Wave.luau), so after
+			k kills it is indices 1..k that are gone and k+1..total that are untouched.
+			This read `index <= alive`, which greys out the back of the line and leaves
+			the corpses at the front standing — the exact opposite of what happened.
+		]]
+		local dead = total - alive
+		local isAlive = index > dead
+		local isFront = index == dead + 1
+
 		body.Transparency = if isAlive then 0 else 0.85
 		body.Color = if isAlive then Color3.fromRGB(190, 55, 55) else Color3.fromRGB(70, 70, 78)
 
+		--[[
+			Only the FRONT enemy gets a real bar, because it is the only one whose
+			health the server sends. Everything behind it is at full by definition —
+			nothing has reached it yet. A bar we cannot back with a number would be
+			decoration pretending to be information, which is what the last build
+			shipped: it sat at 100% until the enemy vanished.
+		]]
 		local bar = body:FindFirstChildOfClass("BillboardGui")
 		if bar then
 			bar.Enabled = isAlive
+			local fill = bar:FindFirstChild("Fill", true) :: Frame?
+			if fill then
+				local fraction = 1
+				if isFront and (tick.frontMaxHp or 0) > 0 then
+					fraction = math.clamp((tick.frontHp or 0) / tick.frontMaxHp, 0, 1)
+				end
+				fill.Size = UDim2.new(fraction, 0, 1, 0)
+			end
 		end
 	end
 end
